@@ -2,7 +2,6 @@
 #include "tool.h"
 #include <math.h>
 #include <stdlib.h>
-#include <stdio.h>
 #define NULL ((void *)0)
 struct buddy_manager* b;
 void init_node(struct block *root, int order, void *start){
@@ -11,7 +10,7 @@ void init_node(struct block *root, int order, void *start){
     root ->next_in_freelist = NULL;
     root ->prev_in_freelist = NULL;
     root->status = FAKE;
-    if(order == 1)return;// no left or right child to init
+    if(order == 0)return;// no left or right child to init
     root->left_child = (struct block *)malloc(sizeof(struct block));
     root->right_child = (struct block *)malloc(sizeof(struct block));
     root->right_child->parent = root;
@@ -29,7 +28,7 @@ int init_page(void *p, int pgcount){
     b = (struct buddy_manager *)malloc(sizeof(struct buddy_manager));
     b->start = p;
     b->pgcount = pgcount;
-    b->maxorder = (int)log2(pgcount)+1;
+    b->maxorder = (int)log2(pgcount);
     b->freelist = (struct free_head_node *)malloc(sizeof(struct free_head_node)*(b->maxorder+1));
     for(int i = 0; i < b->maxorder+1; i++){
         b->freelist[i].order = i;
@@ -42,18 +41,35 @@ int init_page(void *p, int pgcount){
     b->root_block->buddy = NULL;
     b->root_block->status = FREE;
     b->freelist[b->maxorder].next = b->root_block;
-    // todo maybe something wrong with pagerank
+    b->freelist[b->maxorder].block_num = 1;
+    // printf("the start address is %lld\n",(long long)b->start);
+    // printf("the page count is %d\n",b->pgcount);
+    // printf("so the end address is %lld\n",(long long)(b->start+b->pgcount*4096));
     return OK;
 }
+// void look_inside_tree(struct buddy_manager *b){
+//     printf("============================\n");
+//     struct block *node = b->root_block;
+//     while(node!=NULL){
+//         printf("the order is %d\n",node->order);
+//         printf("the start address is %lld\n",(long long)node->start);
+//         if(node->buddy!=NULL)printf("the buddy address and its address sub result is %lld\n",(long long)node->buddy->start-(long long)node->start);
+//         node = node->left_child;
+//     }
+//     printf("============================\n");
+// }
 void *alloc_pages(int rank){
+    rank--;
+    if(rank>b->maxorder||rank<0)return -EINVAL;
+    // look_inside_tree(b);
     //分配rank阶的页面，如果没有足够的页面，返回NULL
     int i;
-    for(i = rank;i<b->maxorder;++i){
+    for(i = rank;i<=b->maxorder;++i){
         if(b->freelist[i].next != NULL)break;
     }
-    if(i>=b->maxorder){
-        printf("no enough pages\n");
-        return NULL;//没有足够的页面
+    if(i>b->maxorder){
+        //printf("no enough pages\n");
+        return -ENOSPC;//没有足够的页面
     }
     //得到应该去rank=i里面拿节点
     //首先把这个节点从freelist里面删掉
@@ -64,6 +80,7 @@ void *alloc_pages(int rank){
     return bl->start;    
 }
 int return_pages(void *p){
+    // printf("the address is %lld\n",(long long)p);
     //释放p指向的页面，如果p不是alloc_pages返回的地址，返回EINVAL
     struct block *bl = find_block_in_buddy(b,p);
     if(bl == NULL||bl->status == FREE) return -EINVAL;
@@ -74,8 +91,10 @@ int return_pages(void *p){
 int query_ranks(void *p){
     struct block *bl = find_block_in_buddy(b,p);
     if(bl == NULL) return -EINVAL;
-    else return bl->order;
+    else return bl->order+1;
 }
 int query_page_counts(int rank){
+    rank--;
+    if(rank>b->maxorder||rank<0)return -EINVAL;
     return b->freelist[rank].block_num;
 }
