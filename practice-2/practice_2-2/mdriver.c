@@ -30,6 +30,9 @@
  * Constants and macros
  **********************/
 
+/* OJ */
+// #define OJ
+
 /* Misc */
 #define MAXLINE     1024 /* max string size */
 #define HDRLINES       4 /* number of header lines in a trace file */
@@ -162,6 +165,7 @@ static void randomize_block(trace_t *trace, int index);
 /* These functions read, allocate, and free storage for traces */
 static trace_t *read_trace(stats_t *stats, const char *tracedir,
 		const char *filename);
+static trace_t *read_trace_stdin(stats_t *stats);
 static void reinit_trace(trace_t *trace);
 static void free_trace(trace_t *trace);
 
@@ -194,8 +198,8 @@ static void app_error(const char *fmt, ...)
 
 /* Run the tests; return the number of tests run (may be less than
    num_tracefiles, if there's a timeout) */
-static void run_tests(int num_tracefiles, const char *tracedir,
-		char **tracefiles, 
+static void run_tests(int num_tracefiles, char trace_from_stdin,
+		const char *tracedir, char **tracefiles, 
 		stats_t *mm_stats, range_t *ranges, speed_t *speed_params) {
 	volatile int i;
 	volatile int timed_out = 0;
@@ -207,7 +211,10 @@ static void run_tests(int num_tracefiles, const char *tracedir,
 		}
 
 		trace_t *trace;
-		trace = read_trace(&mm_stats[i], tracedir, tracefiles[i]);
+		trace = trace_from_stdin
+				? read_trace_stdin(&mm_stats[i])
+				: read_trace(&mm_stats[i], tracedir, tracefiles[i]);
+
 		strcpy(mm_stats[i].filename, trace->filename);
 		mm_stats[i].ops = trace->num_ops;
 		if(timed_out) {
@@ -243,6 +250,7 @@ int main(int argc, char **argv)
 {
 	int i;
 	char c;
+	char trace_from_stdin = 0;
 	char **tracefiles = NULL;  /* null-terminated array of trace file names */
 	int num_tracefiles = 0;    /* the number of traces in that array */
 
@@ -266,7 +274,11 @@ int main(int argc, char **argv)
 	/*
 	 * Read and interpret the command line arguments
 	 */
-	while ((c = getopt(argc, argv, "d:f:c:s:t:v:hVAlD")) != EOF) {
+#ifdef OJ
+		num_tracefiles = 1;
+		trace_from_stdin = 1;
+#else
+	while ((c = getopt(argc, argv, "d:f:c:s:t:v:hVAlDj")) != EOF) {
 		switch (c) {
 
 			case 'A': /* Hidden Autolab driver argument */
@@ -324,6 +336,11 @@ int main(int argc, char **argv)
 				set_timeout = atoi(optarg);
 				break;
 
+			case 'j': /* For OJ */
+				num_tracefiles = 1;
+				trace_from_stdin = 1;
+				break;
+
 			case 'h': /* Print this message */
 				usage();
 				exit(0);
@@ -333,8 +350,12 @@ int main(int argc, char **argv)
 				exit(1);
 		}
 	}
+#endif
 
-	if (tracefiles == NULL) {
+	if (trace_from_stdin) {
+		printf("Using stdin as tracefile\n");
+	}
+	else if (tracefiles == NULL) {
 		tracefiles = default_tracefiles;
 		num_tracefiles = sizeof(default_tracefiles) / sizeof(char *) - 1;
 		printf("Using default tracefiles in %s\n", tracedir);
@@ -367,7 +388,10 @@ int main(int argc, char **argv)
 
 		/* Evaluate the libc malloc package using the K-best scheme */
 		for (i=0; i < num_tracefiles; i++) {
-			trace_t *trace = read_trace(&libc_stats[i], tracedir, tracefiles[i]);
+			trace_t *trace;
+			trace = trace_from_stdin
+				? read_trace_stdin(&libc_stats[i])
+				: read_trace(&libc_stats[i], tracedir, tracefiles[i]);
 
 			if (verbose > 1)
 				printf("Checking libc malloc for correctness, ");
@@ -402,13 +426,13 @@ int main(int argc, char **argv)
 	/* Initialize the simulated memory system in memlib.c */
 	mem_init();
 
-	run_tests(num_tracefiles, tracedir, tracefiles, mm_stats,
-			ranges, &speed_params);
+	run_tests(num_tracefiles, trace_from_stdin, tracedir, tracefiles,
+			mm_stats, ranges, &speed_params);
 
 
 	/* Display the mm results in a compact table */
 	if (verbose) {
-		if (onetime_flag) {
+		if (onetime_flag && !trace_from_stdin) {
 			printf("\n\ncorrectness check finished, by running tracefile \"%s\".\n", tracefiles[num_tracefiles-1]);
 			if (mm_stats[num_tracefiles-1].valid) {
 				printf(" => correct.\n\n");
@@ -469,7 +493,7 @@ int main(int argc, char **argv)
 		}
 
 		perfindex = (p1 + p2)*100.0;
-		printf("Perf index = %.0f (util) + %.0f (thru) = %.0f/100\n",
+		printf("Perf index = %.6f (util) + %.6f (thru) = %.6f\n",
 				p1*100,
 				p2*100,
 				perfindex);
@@ -759,6 +783,105 @@ static trace_t *read_trace(stats_t *stats, const char *tracedir,
 
 	/* fill in the stats */
 	strcpy(stats->filename, trace->filename);
+	stats->weight = trace->weight;
+	stats->ops = trace->num_ops;
+
+	return trace;
+}
+
+/*
+ * read_trace_stdin - read a trace from stdin and store it in memory
+ */
+static trace_t *read_trace_stdin(stats_t *stats)
+{
+	FILE *tracefile;
+	trace_t *trace;
+	char type[MAXLINE];
+	int index, size;
+	int max_index = 0;
+	int op_index;
+
+	if (verbose > 1)
+		printf("Reading tracefile from stdin\n");
+
+	/* Allocate the trace record */
+	if ((trace = (trace_t *) malloc(sizeof(trace_t))) == NULL)
+		unix_error("malloc 1 failed in read_trace");
+
+	/* Read the trace file header */
+	strcpy(trace->filename, "stdin");
+	tracefile = stdin;
+
+	fscanf(tracefile, "%d", &trace->weight);
+	fscanf(tracefile, "%d", &trace->num_ids);
+	fscanf(tracefile, "%d", &trace->num_ops);
+	fscanf(tracefile, "%d", &trace->ignore_ranges);
+
+	if(trace->weight != 0 && trace->weight != 1) {
+		app_error("%s: weight can only be zero or one", trace->filename);
+	}
+	if(trace->ignore_ranges != 0 && trace->ignore_ranges != 1) {
+		app_error("%s: ignore-ranges can only be zero or one", trace->filename);
+	}
+
+	/* We'll store each request line in the trace in this array */
+	if ((trace->ops =
+				(traceop_t *)malloc(trace->num_ops * sizeof(traceop_t))) == NULL)
+		unix_error("malloc 2 failed in read_trace");
+
+	/* We'll keep an array of pointers to the allocated blocks here... */
+	if ((trace->blocks =
+				(char **)calloc(trace->num_ids, sizeof(char *))) == NULL)
+		unix_error("malloc 3 failed in read_trace");
+
+	/* ... along with the corresponding byte sizes of each block */
+	if ((trace->block_sizes =
+				(size_t *)calloc(trace->num_ids,  sizeof(size_t))) == NULL)
+		unix_error("malloc 4 failed in read_trace");
+
+	/* and, if we're debugging, the offset into the random data */
+	if ((trace->block_rand_base =
+				calloc(trace->num_ids, sizeof(*trace->block_rand_base))) == NULL)
+		unix_error("malloc 5 failed in read_trace");
+
+
+	/* read every request line in the trace file */
+	index = 0;
+	op_index = 0;
+	while (fscanf(tracefile, "%s", type) != EOF) {
+		switch(type[0]) {
+			case 'a':
+				fscanf(tracefile, "%u %u", &index, &size);
+				trace->ops[op_index].type = ALLOC;
+				trace->ops[op_index].index = index;
+				trace->ops[op_index].size = size;
+				max_index = (index > max_index) ? index : max_index;
+				break;
+			case 'r':
+				fscanf(tracefile, "%u %u", &index, &size);
+				trace->ops[op_index].type = REALLOC;
+				trace->ops[op_index].index = index;
+				trace->ops[op_index].size = size;
+				max_index = (index > max_index) ? index : max_index;
+				break;
+			case 'f':
+				fscanf(tracefile, "%ud", &index);
+				trace->ops[op_index].type = FREE;
+				trace->ops[op_index].index = index;
+				break;
+			default:
+				app_error("Bogus type character (%c) from stdin\n",
+						type[0]);
+		}
+		op_index++;
+		if(op_index == trace->num_ops) break;
+	}
+	fclose(tracefile);
+	assert(max_index == trace->num_ids - 1);
+	assert(trace->num_ops == op_index);
+
+	/* fill in the stats */
+	strcpy(stats->filename, "stdin");
 	stats->weight = trace->weight;
 	stats->ops = trace->num_ops;
 
@@ -1188,11 +1311,11 @@ static void printresults(int n, stats_t *stats)
 	int sumweight = 0;
 
 	/* Print the individual results for each trace */
-	printf("  %6s%6s %5s%8s%9s  %s\n",
+	printf("  %6s%6s %5s%8s%12s  %s\n",
 			"valid", "util", "ops", "secs", "Kops", "trace");
 	for (i=0; i < n; i++) {
 		if (stats[i].valid) {
-			printf("%2s%4s %5.0f%%%8.0f%10.6f%6.0f %s\n",
+			printf("%2s%4s %5.0f%%%8.0f%10.6f%9.0f %s\n",
 					stats[i].weight != 0 ? "*" : "",
 					"yes",
 					stats[i].util*100.0,
@@ -1206,7 +1329,7 @@ static void printresults(int n, stats_t *stats)
 			sumutil += stats[i].util * stats[i].weight;
 		}
 		else {
-			printf("%2s%4s %6s%8s%9s%6s %s\n",
+			printf("%2s%4s %6s%8s%9s%9s %s\n",
 					stats[i].weight != 0 ? "*" : "",
 					"no",
 					"-",
@@ -1221,7 +1344,7 @@ static void printresults(int n, stats_t *stats)
 	if (errors == 0) {
 		if(sumweight == 0) sumweight = 1;
 
-		printf("%2d     %5.0f%%%8.0f%10.6f%6.0f\n",
+		printf("%2d     %5.0f%%%8.0f%10.6f%9.0f\n",
 				sumweight,
 				(sumutil/(double)sumweight)*100.0,
 				sumops,
@@ -1294,4 +1417,5 @@ static void usage(void)
 	fprintf(stderr, "\t-v <i>     Set Verbosity Level to <i>\n");
 	fprintf(stderr, "\t-s <s>     Timeout after s secs (default no timeout)\n");
 	fprintf(stderr, "\t-f <file>  Use <file> as the trace file.\n");
+	fprintf(stderr, "\t-j         Use <stdin> as the trace file.\n");
 }
