@@ -112,7 +112,7 @@ void *get_next_header(void *head_p){
 }
 unsigned int get_suitable_size(unsigned int size){
   // the block size should be 8*k
-  if(size < 12) return 8;
+  if(size < 12) return 12;
   else if((size-12)%8==0) return size;
   else return ((size-12)/8+1)*8+12;
 }
@@ -127,6 +127,7 @@ unsigned int pack_header(unsigned int block_size,unsigned int prev_status, unsig
  */
 int mm_init(void)
 {
+  // printf("mm_init\n");
   // 4 bytes padding before the first block's header
   startp = mem_sbrk(4);//head_listp points to the start of the heap
   endp = startp + 4;//endp points to the end of the heap
@@ -147,6 +148,7 @@ void *extend_heap(unsigned int block_size){
 }
 
 void delete_free(void *header){//仅仅是从list里面拿出来，状态都没改
+  // printf("delete free\n");
   void *pred = get_real_pred(header);
   void *succ = get_real_succ(header);
   unsigned int relative_pred = (pred==NULL?0:pred-startp);
@@ -158,9 +160,11 @@ void delete_free(void *header){//仅仅是从list里面拿出来，状态都没�
   if(succ != NULL){
     put_word(succ+WSIZE,relative_pred);
   }
+  if(free_header==header)free_header = succ;
 }
 
 void coalesce(){
+  // printf("coalesce\n");
   void *new_free_header=NULL;
   while(1){
     void *header = free_header;
@@ -193,7 +197,6 @@ void coalesce(){
   }
   free_header = new_free_header;
 }
-
 
 void *placement(unsigned int block_size){
     void *header = free_header;
@@ -241,7 +244,7 @@ void *placement(unsigned int block_size){
   }
 
 void *malloc(size_t size)
-{
+{ 
   // int newsize = ALIGN(size + SIZE_T_SIZE);
   // unsigned char *p = mem_sbrk(newsize);
   // //dbg_printf("malloc %u => %p\n", size, p);
@@ -255,10 +258,13 @@ void *malloc(size_t size)
   // }
 
   unsigned int block_size = get_suitable_size(size);
-  return placement(block_size);
+  void *p = placement(block_size);
+  // printf("malloc %lld => %lld %p\n", (long long)size,(long long)block_size, p);
+  return p;
 }
 
 void free(void *ptr){
+  // printf("free pointer of %lld\n",(long long)ptr);
 	// put it into the free list 
   // change this header info
   // and change the prev status of the next header
@@ -288,6 +294,7 @@ void free(void *ptr){
  */
 void *realloc(void *oldptr, size_t size)
 {
+  // printf("realloc\n");
   size_t oldsize;
   void *newptr;
   /* If size == 0 then this is just free, and we return NULL. */
@@ -317,7 +324,8 @@ void *realloc(void *oldptr, size_t size)
  * calloc - Allocate the block and set it to zero.
  */
 void *calloc (size_t nmemb, size_t size)
-{
+{ 
+  // printf("calloc\n");
   size_t bytes = nmemb * size;
   void *newptr;
   newptr = malloc(bytes);
