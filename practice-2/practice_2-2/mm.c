@@ -55,19 +55,20 @@
 // 然后free_list 采用的是first fit策略，推迟合并，合并的时候看footer的prev_status，如果是1就合并，如果是0就不合并
 // 也就是freelist是乱序的，只是用来找free block，但是header-footer相连是地址顺序的，用来合并
 // header的内容 block size + prev_status + status，footer 就是header的复制, 其中blocksize是4的倍数，所以占了30位，后面各占一位
-// succ 指向的是下个free 块的header，便于快速查看block size，
+// pred succ 指向的是下个free 块的header，便于快速查看block size，
 // 并且为了压缩最小块的限制，succ存为与startp的差值，4byte
 #define WSIZE 4
-#define SMALLEST_BLOCK 8
+#define SMALLEST_BLOCK 12
 #define FREE 0
 #define USED 0
 #define PREV_FREE 0
 #define PREV_USED 2
-// succ + footer
-// 4+4 = 8
+// pred + succ + footer
+// 4+4+4 = 12
 // succ = real succ - startp
+// pred = real pred - startp
 // but by putting header and footer together we can manage 8-aligned
-// we always hope to allocate blocks of size 8*k
+// we always hope to allocate blocks of size 8*k+12
 void *last_header_p;
 void *startp;// the beginning of the heap, 4-bytes before thr first block's header
 void *endp;// the end of the heap. exactly after the last block's footer
@@ -96,17 +97,24 @@ unsigned int get_prev_status(void *head_p){
 void *get_footer_pointer(void *head_p){
   return head_p + get_size(head_p);
 }
+void *get_real_pred(void *head_p){
+  unsigned int relative_pred = get_word(head_p+WSIZE);
+  if(relative_pred==0)return 0;
+  else return relative_pred+startp;
+}
 void *get_real_succ(void *head_p){
-  return get_word(head_p+WSIZE)+startp;
+  unsigned int relative_succ = get_word(head_p+2*WSIZE);
+  if(relative_succ==0)return 0;
+  else return relative_succ+startp;
 }
 void *get_next_header(void *head_p){
-  return head_p + 4 + get_size(head_p);
+  return head_p + WSIZE + get_size(head_p);
 }
 unsigned int get_suitable_size(unsigned int size){
   // the block size should be 8*k
-  if(size < 8) return 8;
-  else if(size%8==0) return size;
-  else return (size/8+1)*8;
+  if(size < 12) return 8;
+  else if((size-12)%8==0) return size;
+  else return ((size-12)/8+1)*8+12;
 }
 unsigned int pack_header(unsigned int block_size,unsigned int prev_status, unsigned int status){
   // 30 + 1 + 1
@@ -138,35 +146,99 @@ void *extend_heap(unsigned int block_size){
   return last_header_p+WSIZE;
 }
 
+void delete_free(void *header){//仅仅是从list里面拿出来，状态都没改
+  void *pred = get_real_pred(header);
+  void *succ = get_real_succ(header);
+  unsigned int relative_pred = (pred==NULL?0:pred-startp);
+  unsigned int relative_succ = (succ==NULL?0:succ-startp);
+  if(pred == NULL)free_header = header;
+  else{
+    put_word(pred+2*WSIZE,relative_succ);
+  }
+  if(succ != NULL){
+    put_word(succ+WSIZE,relative_pred);
+  }
+}
+
+void coalesce(){
+  void *new_free_header=NULL;
+  while(1){
+    void *header = free_header;
+    if(header==NULL)break;
+    delete_free(header);
+    unsigned int new_size = get_size(header);
+    void *next_header = header;
+    while(1){
+      next_header = get_next_header(header);
+      if(next_header>=endp)break;
+      if(get_status(next_header)==FREE){
+        delete_free(next_header);
+        new_size += get_size(next_header)+WSIZE;
+      }else break;
+    }
+    void *this_header=header;
+    while(1){
+      if(get_prev_status(this_header)==PREV_USED)break;
+      else{
+        unsigned int prev_size = get_size(this_header-WSIZE);
+        void *prev_header = this_header - prev_size - WSIZE;
+        delete_free(prev_header);
+        new_size += prev_size+WSIZE;
+        this_header = prev_header;
+      }
+    }
+    put_word(this_header,pack_header(new_size,PREV_USED,FREE));
+    put_word(this_header+WSIZE,0);
+    put_word(this_header+2*WSIZE,new_free_header-startp);
+  }
+  free_header = new_free_header;
+}
+
+
 void *placement(unsigned int block_size){
     void *header = free_header;
-    void *before_header = NULL;// 没记下来pred，用beforehead知道前一个
     while(header != NULL){
       if(get_size(header)>=block_size)break;
       else {
-        before_header = header;
         header = get_real_succ(header);
       }
     }
     if(header == NULL){
-      // todo coalesce and check again
-      return extend_heap(block_size);
-    }else{
-      //用这块，并且记得把它从freelist里面删掉，并且更新它地址顺序后面那块的prev-status
-      if(before_header==NULL)free_header = get_real_succ(header);
-      else {
-        unsigned int relative_succ =(unsigned int)(get_real_succ(header)-startp);
-        put_word((void *)(before_header+4),relative_succ);
-      }
-      void *next_head_p = get_next_header(header);
-        if(next_head_p<endp){
-          unsigned int renew = pack_header(get_size(next_head_p),PREV_USED,get_status(next_head_p));
-          put_word(next_head_p,renew);
-        }
-        // todo check split
-        return header+WSIZE;
+      // coalesce and check again
+      // coalesce();
+      // header = free_header;
+      // while(header != NULL){
+      //   if(get_size(header)>=block_size)break;
+      //   else {
+      //     header = get_real_succ(header);
+      //   }
+      // }
+      if(header == NULL)return extend_heap(block_size);
     }
-}
+  //用这块，并且记得把它从freelist里面删掉，并且更新它地址顺序后面那块的prev-status
+  delete_free(header);
+  void *next_head_p = get_next_header(header);
+  if(next_head_p<endp){
+    unsigned int renew = pack_header(get_size(next_head_p),PREV_USED,get_status(next_head_p));
+    put_word(next_head_p,renew);
+  }
+    put_word(header,pack_header(get_size(header),get_prev_status(header),USED));
+    // check split
+    // if(get_size(header)-block_size>=SMALLEST_BLOCK+WSIZE){
+    //   // split
+    //   unsigned int new_size = get_size(header)-block_size-WSIZE;
+    //   void *new_header = header + block_size + WSIZE;
+    //   put_word(new_header,pack_header(new_size,PREV_USED,FREE));
+    //   put_word(new_header+WSIZE,0);
+    //   put_word(new_header+2*WSIZE,free_header-startp);
+    //   free_header = new_header;
+    //   put_word(get_footer_pointer(new_header),pack_header(new_size,PREV_USED,FREE));
+    //   put_word(header,pack_header(block_size,get_prev_status(header),USED));
+    //   void *after_new_header = get_next_header(new_header);
+    //   put_word(after_new_header,pack_header(get_size(after_new_header),PREV_FREE,get_status(after_new_header)));
+    // }
+    return header+WSIZE;
+  }
 
 void *malloc(size_t size)
 {
@@ -192,7 +264,12 @@ void free(void *ptr){
   // and change the prev status of the next header
   if(ptr==NULL)return;
   void *this_header = ptr - WSIZE;
-  put_word(ptr,free_header-startp);
+  put_word(ptr+WSIZE,(free_header==NULL?0:free_header-startp));//succ
+  put_word(ptr,0);//pred
+  if(free_header != NULL){
+    put_word(free_header+WSIZE,this_header-startp);//pred
+  }
+  free_header = this_header;
   unsigned int header_info = pack_header(get_size(this_header),get_prev_status(this_header),FREE);
   put_word(this_header,header_info);
   void *footer = get_footer_pointer(this_header);
