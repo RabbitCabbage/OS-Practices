@@ -153,17 +153,25 @@ void delete_free(void *header){//仅仅是从list里面拿出来，状态都没�
   void *succ = get_real_succ(header);
   unsigned int relative_pred = (pred==NULL?0:pred-startp);
   unsigned int relative_succ = (succ==NULL?0:succ-startp);
-  if(pred == NULL)free_header = header;
-  else{
-    put_word(pred+2*WSIZE,relative_succ);
+  if(succ != NULL) put_word(succ+WSIZE,relative_pred);
+  if(pred != NULL) put_word(pred+2*WSIZE,relative_succ);
+  if(free_header == header) free_header = succ;
+}
+
+unsigned int my_checkheap(){
+  printf("===========================checkheap=============================\n");
+  void *header = free_header;
+  unsigned int free_size = 0;
+	while(1){
+    if(header==NULL)break;
+    printf("the header is %lld\t the pred is %lld\t the succ is %lld\n",(long long)header,(long long)get_real_pred(header),(long long)get_real_succ(header));
+    header = get_real_succ(header);
   }
-  if(succ != NULL){
-    put_word(succ+WSIZE,relative_pred);
-  }
-  if(free_header==header)free_header = succ;
+  return free_size;
 }
 
 void coalesce(){
+  int last_p_coalesced = 0;
   if(free_header==NULL)return;
   unsigned int size = get_size(free_header);
   void *start = free_header;
@@ -175,6 +183,7 @@ void coalesce(){
     if(get_status(next_header)==USED)break;
     else{
       delete_free(next_header);
+      if(next_header==last_header_p)last_p_coalesced = 1;
       size += get_size(next_header)+WSIZE;
       header = next_header;
     }
@@ -186,6 +195,7 @@ void coalesce(){
       void *prev_header = prev_footer - get_size(prev_footer);
       delete_free(prev_header);
       size += get_size(prev_header)+WSIZE;
+      if(start==last_header_p)last_p_coalesced = 1;
       start = prev_header;
     }
   }
@@ -196,6 +206,9 @@ void coalesce(){
   put_word(start+2*WSIZE,(free_header==NULL?0:free_header-startp));
   if(free_header!=NULL)put_word(free_header+WSIZE,start-startp);
   free_header = start;
+  if(last_p_coalesced){
+    last_header_p = start;
+  }
 }
 
 void *placement(unsigned int block_size){
@@ -228,43 +241,24 @@ void *placement(unsigned int block_size){
       put_word(header,pack_header(block_size,get_prev_status(header),USED));
       void *after_new_header = get_next_header(new_header);
       put_word(after_new_header,pack_header(get_size(after_new_header),PREV_FREE,get_status(after_new_header)));
+      if(last_header_p == header){
+        last_header_p = new_header;
+      }
+      coalesce();
     }
     return header+WSIZE;
   }
 
 void *malloc(size_t size)
 { 
-  // int newsize = ALIGN(size + SIZE_T_SIZE);
-  // unsigned char *p = mem_sbrk(newsize);
-  // //dbg_printf("malloc %u => %p\n", size, p);
-
-  // if ((long)p < 0)
-  //   return NULL;
-  // else {
-  //   p += SIZE_T_SIZE;
-  //   *SIZE_PTR(p) = size;
-  //   return p;
-  // }
-  coalesce();
+  // coalesce();
   unsigned int block_size = get_suitable_size(size);
   void *p = placement(block_size);
   // printf("malloc %lld => %lld %p\n", (long long)size,(long long)block_size, p);
   return p;
 }
 
-unsigned int my_checkheap(){
-  void *header = free_header;
-  unsigned int free_size = 0;
-	while(1){
-    if(header==NULL)break;
-    free_size += get_size(header)+WSIZE;
-    header = get_real_succ(header);
-  }
-  return free_size;
-}
-
 void free(void *ptr){
-  // printf("free pointer of %lld\n",(long long)ptr);
 	// put it into the free list 
   // change this header info
   // and change the prev status of the next header
@@ -285,6 +279,7 @@ void free(void *ptr){
     unsigned int renew = pack_header(get_size(next_head_p),PREV_FREE,get_status(next_head_p));
     put_word(next_head_p,renew);
   }
+  coalesce();
 }
 
 /*
