@@ -60,7 +60,7 @@
 #define WSIZE 4
 #define SMALLEST_BLOCK 12
 #define FREE 0
-#define USED 0
+#define USED 1
 #define PREV_FREE 0
 #define PREV_USED 2
 // pred + succ + footer
@@ -151,6 +151,9 @@ void delete_free(void *header){//仅仅是从list里面拿出来，状态都没�
   // printf("delete free\n");
   void *pred = get_real_pred(header);
   void *succ = get_real_succ(header);
+  if((long long)header==34368775188){
+    printf("pred %lld succ %lld\n",(long long)pred,(long long)succ);
+  }
   unsigned int relative_pred = (pred==NULL?0:pred-startp);
   unsigned int relative_succ = (succ==NULL?0:succ-startp);
   if(pred == NULL)free_header = header;
@@ -171,13 +174,14 @@ void coalesce(){
     if(header==NULL)break;
     delete_free(header);
     unsigned int new_size = get_size(header);
-    void *next_header = header;
+    void *next_header;
     while(1){
       next_header = get_next_header(header);
       if(next_header>=endp)break;
       if(get_status(next_header)==FREE){
         delete_free(next_header);
         new_size += get_size(next_header)+WSIZE;
+        header = next_header;
       }else break;
     }
     void *this_header=header;
@@ -193,7 +197,7 @@ void coalesce(){
     }
     put_word(this_header,pack_header(new_size,PREV_USED,FREE));
     put_word(this_header+WSIZE,0);
-    put_word(this_header+2*WSIZE,new_free_header-startp);
+    put_word(this_header+2*WSIZE,(new_free_header==NULL?0:new_free_header-startp));
   }
   free_header = new_free_header;
 }
@@ -208,14 +212,14 @@ void *placement(unsigned int block_size){
     }
     if(header == NULL){
       // coalesce and check again
-      // coalesce();
-      // header = free_header;
-      // while(header != NULL){
-      //   if(get_size(header)>=block_size)break;
-      //   else {
-      //     header = get_real_succ(header);
-      //   }
-      // }
+      coalesce();
+      header = free_header;
+      while(header != NULL){
+        if(get_size(header)>=block_size)break;
+        else {
+          header = get_real_succ(header);
+        }
+      }
       if(header == NULL)return extend_heap(block_size);
     }
   //用这块，并且记得把它从freelist里面删掉，并且更新它地址顺序后面那块的prev-status
