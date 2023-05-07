@@ -179,6 +179,16 @@ void coalesce(){
       header = next_header;
     }
   }
+  while(1){
+    if(get_prev_status(start)==PREV_USED)break;
+    else {
+      void *prev_footer = start - WSIZE;
+      void *prev_header = prev_footer - get_size(prev_footer);
+      delete_free(prev_header);
+      size += get_size(prev_header)+WSIZE;
+      start = prev_header;
+    }
+  }
   // put back to the free list
   put_word(start,pack_header(size,PREV_USED,FREE));
   put_word(get_footer_pointer(start),pack_header(size,PREV_USED,FREE));
