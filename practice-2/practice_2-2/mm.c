@@ -151,9 +151,6 @@ void delete_free(void *header){//仅仅是从list里面拿出来，状态都没�
   // printf("delete free\n");
   void *pred = get_real_pred(header);
   void *succ = get_real_succ(header);
-  if((long long)header==34368775188){
-    printf("pred %lld succ %lld\n",(long long)pred,(long long)succ);
-  }
   unsigned int relative_pred = (pred==NULL?0:pred-startp);
   unsigned int relative_succ = (succ==NULL?0:succ-startp);
   if(pred == NULL)free_header = header;
@@ -167,39 +164,28 @@ void delete_free(void *header){//仅仅是从list里面拿出来，状态都没�
 }
 
 void coalesce(){
-  // printf("coalesce\n");
-  void *new_free_header=NULL;
+  if(free_header==NULL)return;
+  unsigned int size = get_size(free_header);
+  void *start = free_header;
+  void *header = start;
+  delete_free(free_header);// now the free header is changed
   while(1){
-    void *header = free_header;
-    if(header==NULL)break;
-    delete_free(header);
-    unsigned int new_size = get_size(header);
-    void *next_header;
-    while(1){
-      next_header = get_next_header(header);
-      if(next_header>=endp)break;
-      if(get_status(next_header)==FREE){
-        delete_free(next_header);
-        new_size += get_size(next_header)+WSIZE;
-        header = next_header;
-      }else break;
+    void *next_header = get_next_header(header);
+    if(next_header>=endp)break;
+    if(get_status(next_header)==USED)break;
+    else{
+      delete_free(next_header);
+      size += get_size(next_header)+WSIZE;
+      header = next_header;
     }
-    void *this_header=header;
-    while(1){
-      if(get_prev_status(this_header)==PREV_USED)break;
-      else{
-        unsigned int prev_size = get_size(this_header-WSIZE);
-        void *prev_header = this_header - prev_size - WSIZE;
-        delete_free(prev_header);
-        new_size += prev_size+WSIZE;
-        this_header = prev_header;
-      }
-    }
-    put_word(this_header,pack_header(new_size,PREV_USED,FREE));
-    put_word(this_header+WSIZE,0);
-    put_word(this_header+2*WSIZE,(new_free_header==NULL?0:new_free_header-startp));
   }
-  free_header = new_free_header;
+  // put back to the free list
+  put_word(start,pack_header(size,PREV_USED,FREE));
+  put_word(get_footer_pointer(start),pack_header(size,PREV_USED,FREE));
+  put_word(start+WSIZE,0);
+  put_word(start+2*WSIZE,(free_header==NULL?0:free_header-startp));
+  if(free_header!=NULL)put_word(free_header+WSIZE,start-startp);
+  free_header = start;
 }
 
 void *placement(unsigned int block_size){
@@ -210,18 +196,7 @@ void *placement(unsigned int block_size){
         header = get_real_succ(header);
       }
     }
-    if(header == NULL){
-      // coalesce and check again
-      coalesce();
-      header = free_header;
-      while(header != NULL){
-        if(get_size(header)>=block_size)break;
-        else {
-          header = get_real_succ(header);
-        }
-      }
-      if(header == NULL)return extend_heap(block_size);
-    }
+  if(header == NULL)return extend_heap(block_size);
   //用这块，并且记得把它从freelist里面删掉，并且更新它地址顺序后面那块的prev-status
   delete_free(header);
   void *next_head_p = get_next_header(header);
@@ -230,20 +205,20 @@ void *placement(unsigned int block_size){
     put_word(next_head_p,renew);
   }
     put_word(header,pack_header(get_size(header),get_prev_status(header),USED));
-    // check split
-    // if(get_size(header)-block_size>=SMALLEST_BLOCK+WSIZE){
-    //   // split
-    //   unsigned int new_size = get_size(header)-block_size-WSIZE;
-    //   void *new_header = header + block_size + WSIZE;
-    //   put_word(new_header,pack_header(new_size,PREV_USED,FREE));
-    //   put_word(new_header+WSIZE,0);
-    //   put_word(new_header+2*WSIZE,free_header-startp);
-    //   free_header = new_header;
-    //   put_word(get_footer_pointer(new_header),pack_header(new_size,PREV_USED,FREE));
-    //   put_word(header,pack_header(block_size,get_prev_status(header),USED));
-    //   void *after_new_header = get_next_header(new_header);
-    //   put_word(after_new_header,pack_header(get_size(after_new_header),PREV_FREE,get_status(after_new_header)));
-    // }
+    if(get_size(header)-block_size>=SMALLEST_BLOCK+WSIZE){
+      // split
+      unsigned int new_size = get_size(header)-block_size-WSIZE;
+      void *new_header = header + block_size + WSIZE;
+      put_word(new_header,pack_header(new_size,PREV_USED,FREE));
+      put_word(new_header+WSIZE,0);
+      put_word(new_header+2*WSIZE,(free_header==NULL?0:free_header-startp));
+      if(free_header!=NULL)put_word(free_header+WSIZE,new_header-startp);
+      free_header = new_header;
+      put_word(get_footer_pointer(new_header),pack_header(new_size,PREV_USED,FREE));
+      put_word(header,pack_header(block_size,get_prev_status(header),USED));
+      void *after_new_header = get_next_header(new_header);
+      put_word(after_new_header,pack_header(get_size(after_new_header),PREV_FREE,get_status(after_new_header)));
+    }
     return header+WSIZE;
   }
 
@@ -260,11 +235,22 @@ void *malloc(size_t size)
   //   *SIZE_PTR(p) = size;
   //   return p;
   // }
-
+  coalesce();
   unsigned int block_size = get_suitable_size(size);
   void *p = placement(block_size);
   // printf("malloc %lld => %lld %p\n", (long long)size,(long long)block_size, p);
   return p;
+}
+
+unsigned int my_checkheap(){
+  void *header = free_header;
+  unsigned int free_size = 0;
+	while(1){
+    if(header==NULL)break;
+    free_size += get_size(header)+WSIZE;
+    header = get_real_succ(header);
+  }
+  return free_size;
 }
 
 void free(void *ptr){
