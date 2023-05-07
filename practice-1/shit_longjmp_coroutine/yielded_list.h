@@ -20,7 +20,6 @@ struct list{
     //used to add node to the last, 
     //when a coroutine is yielded, we put it on the end of the list
 void add_yielded_coroutine(struct list * yielded_list,cid_t coroutine_id, struct task_struct* coroutine_task){
-    printf("add_yielded_coroutine\n");
         if(coroutine_task->node_ptr!=NULL)return;//have added to the list, not to add again
         struct list_node * new_node =  (struct list_node *)malloc(sizeof(struct list_node));
         new_node->prev = yielded_list->tail_node;
@@ -50,16 +49,12 @@ struct task_struct* find_first_coroutine(struct list * yielded_list){
         }
         struct list_node* to_run = yielded_list->head_node->next;
         while(1){
-            if(to_run->coroutine_task->status==RUNNING)printf("first condition is true\n");
-            if(to_run->coroutine_task->wait_for==NULL)printf("second condition is true\n");
-            if(to_run->coroutine_task->wait_for->status==FINISHED)printf("third condition is true\n");
             if(to_run->coroutine_task->status==RUNNING &&(to_run->coroutine_task->wait_for==NULL||to_run->coroutine_task->wait_for->status==FINISHED))
                 break;
             else if(to_run->next==NULL)
                 return yielded_list->head_node->coroutine_task;
             else to_run = to_run->next;
         }
-        printf("to run %lld\n",to_run->coroutine_id);
         struct task_struct *pointer = to_run->coroutine_task;
         // to_run->prev->next = to_run->next;
         // if(to_run->next != NULL)to_run->next->prev = to_run->prev;

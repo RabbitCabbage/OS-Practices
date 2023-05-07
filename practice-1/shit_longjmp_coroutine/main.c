@@ -62,7 +62,6 @@ int main(){
     printf("Main: test nested creation.\n");
     coroutine[0] = co_start(nested_costart);
     printf("Main: nested coroutine finished.\n");
-    // co_waitall();// todo
     printf("the return value of nested coroutine is %lld\n", coroutine[0]);
     if(coroutine[0] != 10) fail("Nested coroutine ID not equal", __func__, __LINE__);
     if(co_getret(coroutine[0]) != 200) fail("Nested coroutine return value failed", __func__, __LINE__);

@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "d:/Desktop/OperatingSystem/OS2023-Practices/practice-1/coroutine",
-      "program": "d:/Desktop/OperatingSystem/OS2023-Practices/practice-1/coroutine/build/Debug/outDebug",
+      "cwd": "d:/Desktop/OperatingSystem/OS-Practices/practice-1/rush_context_coroutine",
+      "program": "d:/Desktop/OperatingSystem/OS-Practices/practice-1/rush_context_coroutine/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
