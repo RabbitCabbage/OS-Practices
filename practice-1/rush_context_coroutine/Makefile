@@ -1,2 +1,2 @@
 c:
-	gcc main.c coroutine.c -o main -g -pthread -Wall -fstack-protector-all -fsanitize=address
+	gcc main_single.c coroutine.c -o main -g -pthread -fno-stack-protector -U_FORTIFY_SOURCE

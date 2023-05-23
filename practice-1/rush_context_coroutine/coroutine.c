@@ -48,6 +48,7 @@ int afterrun(int ret_val){
 
 int co_start(int (*routine)(void)){
     struct task_struct *new_coroutine = add_coroutine(coroutines,coroutine_count++,current_coroutine,routine);
+    printf("new coroutine id: %lld\n",new_coroutine->coroutine_id);
     if(current_coroutine->coroutine_id!=-1 && current_coroutine->status!=FINISHED)
          add_yielded_coroutine(yield_list,current_coroutine->coroutine_id,current_coroutine);
     getcontext(&(current_coroutine->context));
@@ -80,6 +81,7 @@ int co_getret(int cid){
 int co_yield(){
     // print out the info for the current coroutine env
     struct task_struct *yield_to = find_first_coroutine(yield_list);
+    printf("from coroutine %lld to coroutine %lld\n",current_coroutine->coroutine_id,yield_to->coroutine_id);
     add_yielded_coroutine(yield_list,current_coroutine->coroutine_id,current_coroutine);
     swapcontext(&(current_coroutine->context),&(yield_to->context));
     current_coroutine = yield_to;

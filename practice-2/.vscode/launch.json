@@ -8,8 +8,8 @@
       "args": [],
       "stopAtEntry": false,
       "externalConsole": true,
-      "cwd": "${workspaceFolder}",
-      "program": "/mnt/d/Desktop/OperatingSystem/OS-Practices/practice-1/shit_longjmp_coroutine/main",
+      "cwd": "d:/Desktop/OperatingSystem/OS-Practices/practice-2/practice_2-2",
+      "program": "d:/Desktop/OperatingSystem/OS-Practices/practice-2/practice_2-2/build/Debug/outDebug",
       "MIMode": "gdb",
       "miDebuggerPath": "gdb",
       "setupCommands": [
