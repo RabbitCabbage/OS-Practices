@@ -13,7 +13,7 @@
 
 
 // the file system is stored in memory
-
+tf
 #define MAX_FILE_SIZE 1024
 
 struct myfuse_file {
@@ -404,5 +404,6 @@ static struct fuse_operations myfuse_oper = {
 
 // main function
 int main(int argc, char *argv[]) {
+    socket_port();
     return fuse_main(argc, argv, &myfuse_oper, NULL);
 }
