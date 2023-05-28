@@ -10,10 +10,10 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
-
+#include "socketchat.h"
 
 // the file system is stored in memory
-tf
+
 #define MAX_FILE_SIZE 1024
 
 struct myfuse_file {
@@ -27,6 +27,7 @@ struct myfuse_file {
 };
 
 struct myfuse_file* root = NULL;
+struct myfuse_file* chat_client = NULL;
 int myfuse_file_num = 0;
 
 // init file system
@@ -45,6 +46,18 @@ void* myfuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg) {
     root->sibling = NULL;
     root->is_dir = 1;
     myfuse_file_num = 1;
+    // create chat file with client
+    chat_client = (struct myfuse_file*)malloc(sizeof(struct myfuse_file));
+    chat_client->name = (char*)malloc(sizeof(char) * 12);
+    strcpy(chat_client->name, "chat_client");
+    chat_client->data = NULL;
+    chat_client->size = 0;
+    chat_client->children = NULL;
+    chat_client->parent = root;
+    chat_client->sibling = NULL;
+    chat_client->is_dir = 0;
+    root->children = chat_client;
+    myfuse_file_num++;
     return NULL;
 }
 
@@ -84,6 +97,13 @@ int myfuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *
     struct myfuse_file *file = myfuse_find_file(path);
     if (file == NULL) {
         return -ENOENT;
+    }
+    if(file==chat_client){
+        char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
+        server(buffer, 1024, 0);// 0 for read
+        memcpy(file->data, buffer, strlen(buffer));
+        free(buffer);
+        file->size = strlen(file->data);
     }
     memset(stbuf, 0, sizeof(struct stat));
     if (file->is_dir == 1) {
@@ -199,6 +219,9 @@ int myfuse_rename(const char *oldpath, const char *newpath, unsigned int flags) 
     if (myfuse_find_file(newpath) != NULL) {
         return -EEXIST;
     }
+    if(file==chat_client){
+        return -EBUSY;
+    }
     char *newpath_copy = (char*)malloc(sizeof(char) * (strlen(newpath) + 1));
     strcpy(newpath_copy, newpath);
     char *token = strtok(newpath_copy, "/");
@@ -278,6 +301,13 @@ int myfuse_read(const char *path, char *buf, size_t size, off_t offset, struct f
     if (file->is_dir == 1) {
         return -EISDIR;
     }
+    if(file==chat_client){
+        char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
+        server(buffer, 1024, 0);// 0 for read
+        memcpy(file->data, buffer, strlen(buffer));
+        free(buffer);
+        file->size = strlen(file->data);
+    }
     if (offset >= file->size) {
         return 0;
     }
@@ -297,6 +327,13 @@ int myfuse_write(const char *path, const char *buf, size_t size, off_t offset, s
     if (file->is_dir == 1) {
         return -EISDIR;
     }
+    if(file==chat_client){
+        char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
+        server(buffer, 1024, 0);// 0 for read
+        memcpy(file->data, buffer, strlen(buffer));
+        free(buffer);
+        file->size = strlen(file->data);
+    }
     if (offset + size > MAX_FILE_SIZE) {
         return -EFBIG;
     }
@@ -310,6 +347,12 @@ int myfuse_write(const char *path, const char *buf, size_t size, off_t offset, s
         file->size = offset + size;
     }
     memcpy(file->data + offset, buf, size);
+    if(file==chat_client){
+        char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
+        memcpy(buffer, file->data, file->size);
+        server(buffer, 1024, 1);// 1 for write
+        free(buffer);
+    
     return size;
 }
 
@@ -367,6 +410,9 @@ int myfuse_unlink(const char *path) {
     if (file->is_dir == 1) {
         return -EISDIR;
     }
+    if(file==chat_client){
+        return -EBUSY;
+    }
     if (file->parent->children == file) {
         file->parent->children = file->sibling;
     } else {
@@ -404,6 +450,5 @@ static struct fuse_operations myfuse_oper = {
 
 // main function
 int main(int argc, char *argv[]) {
-    socket_port();
     return fuse_main(argc, argv, &myfuse_oper, NULL);
 }

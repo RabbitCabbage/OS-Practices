@@ -1,5 +1,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <string.h>
+#include <stdio.h>
 #include "socketchat.h"
 
 int set_block_flag(int fd, int blocking)
@@ -11,7 +16,49 @@ int set_block_flag(int fd, int blocking)
     return (fcntl(fd, F_SETFL, flags) == 0) ? 1 : 0;
 }
 
-void server() {
+// 0 for read and 1 for write
+void server(char *buffer, int size, int rw) {
+    int sockfd, connfd;
+    struct sockaddr_in addr;
+
+    // 创建套接字
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+    // 初始化地址结构体
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(12345);   // 指定端口号
+    addr.sin_addr.s_addr = INADDR_ANY;
+
+    // 绑定套接字到地址
+    bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
+
+    // 监听套接字
+    listen(sockfd, 5);
+
+    // 接受连接请求，并处理客户端发送的数据
+    connfd = accept(sockfd, NULL, NULL);
+    set_block_flag(sockfd, 0);
+    if(connfd > 0) printf("New client connected\n");
+    else return;
+
+    // 处理客户端发送的数据
+    if(rw==0){
+        memset(buffer, 0, size);
+        read(connfd, buffer, sizeof(buffer));
+        printf("server received %ld bytes: %s\n", nread, buffer);
+    } else {
+        write(connfd, buffer, sizeof(buffer));
+        printf("server sent %ld bytes: %s\n", nwrite, buffer);
+    }
+
+    // 关闭连接
+    close(connfd);
+    printf("Client disconnected\n");
+    // 关闭套接字
+    close(sockfd);
+}
+
+void client_read(char *buffer, int size, int rw){
     int sockfd;
     struct sockaddr_in addr;
 
@@ -20,64 +67,25 @@ void server() {
 
     // 初始化地址结构体
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(0);       // 申请一个未使用的本地端口
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(12345);   // 指定端口号
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
 
-    // 绑定套接字到地址
-    bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
+    // 连接到服务器
+    connect(sockfd, (struct sockaddr*)&addr, sizeof(addr));
 
-    // 获取绑定后的地址和端口号
-    struct sockaddr_in local_addr;
-    socklen_t addrlen = sizeof(local_addr);
-    getsockname(sockfd, (struct sockaddr*)&local_addr, &addrlen);
-    printf("Local address: %s:%d\n", inet_ntoa(local_addr.sin_addr), ntohs(local_addr.sin_port));
-    
+    // 设置套接字为非阻塞模式
     set_block_flag(sockfd, 0);
-
-    // 监听套接字
-    listen(sockfd, 5);
-
-    // 接受连接
-    int connfd;
-    struct sockaddr_in client_addr;
-    socklen_t client_addrlen = sizeof(client_addr);
-    while (1) {
-        connfd = accept(sockfd, (struct sockaddr*)&client_addr, &client_addrlen);
-        if (connfd != -1) {
-            printf("Client address: %s:%d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
-            set_block_flag(connfd, 0);
-            break;
-        }
-    }
-    fd_set readfds = allfds;
-    int ret = select(maxfd + 1, &readfds, NULL, NULL, NULL);
-    if (ret < 0) {
-        // 发生错误，退出循环
-        break;
+    
+    // 处理缓冲区中的数据
+    if(rw==0){
+        memset(buffer, 0, sizeof(buffer));
+        read(sockfd, buffer, sizeof(buffer));
+        printf("client received %ld bytes: %s\n", nread, buffer);
+    } else {
+        write(sockfd, buffer, sizeof(buffer));
+        printf("client sent %ld bytes: %s\n", nwrite, buffer);
     }
 
-    for (int i = 0; i <= maxfd; ++i) {
-        if (FD_ISSET(i, &readfds)) {
-            if (i == sockfd) {
-                // 处理新的连接请求
-            } else {
-                // 处理已连接的客户端 Socket 上的数据
-                char buf[1024];
-                ssize_t nread = recv(i, buf, sizeof(buf), MSG_DONTWAIT);
-                if (nread > 0) {
-                    // 将收到的数据添加到缓冲区中
-                    strncat(buffer, buf, nread);
-                } else if (nread == 0 || (nread < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
-                    // 客户端关闭了连接或发生错误，从监听列表中移除该 Socket
-                    FD_CLR(i, &allfds);
-                    close(i);
-                }
-            }
-        }
-    }
-
-}
-
-void server(){
-
+    // 关闭连接
+    close(sockfd);
 }
