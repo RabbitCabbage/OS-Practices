@@ -17,6 +17,10 @@ int main()
 	int sockfd;		
 
     /* code */
+	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0){
+		cout << "socket error" << endl;
+		exit(-1);
+	}
 	
 	struct ifconf ifc;
 	caddr_t buf;
@@ -34,6 +38,10 @@ int main()
 	//获取所有接口信息
 	
     /* code */
+	if (ioctl(sockfd, SIOCGIFCONF, (char*)&ifc) < 0){
+		cout << "ioctl error" << endl;
+		exit(-1);
+	}
 	
 	//遍历每一个ifreq结构
 	struct ifreq *ifr;
@@ -50,17 +58,19 @@ int main()
 		
 		//获取广播地址
 		ifrcopy = *ifr;
-
-		/* code */
-
+		if (ioctl(sockfd, SIOCGIFBRDADDR, &ifrcopy) < 0){
+			cout << "ioctl error" << endl;
+			exit(-1);
+		}
 		cout << "broad addr: "
 			 << inet_ntoa(((struct sockaddr_in*)&(ifrcopy.ifr_addr))->sin_addr)
 			 << endl;
 		//获取mtu
 		ifrcopy = *ifr;
-		
-        /* code */
-
+		if (ioctl(sockfd, SIOCGIFMTU, &ifrcopy) < 0){
+			cout << "ioctl error" << endl;
+			exit(-1);
+		}
 		cout << "mtu: " << ifrcopy.ifr_mtu << endl;
 		cout << endl;
 		ifr++;
