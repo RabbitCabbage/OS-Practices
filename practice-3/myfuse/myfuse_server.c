@@ -28,6 +28,7 @@ struct myfuse_file {
 
 struct myfuse_file* root = NULL;
 struct myfuse_file* chat_client = NULL;
+int serverfd = -1;
 int myfuse_file_num = 0;
 
 // init file system
@@ -47,6 +48,7 @@ void* myfuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg) {
     root->is_dir = 1;
     myfuse_file_num = 1;
     // create chat file with client
+    serverfd = server_accept();
     chat_client = (struct myfuse_file*)malloc(sizeof(struct myfuse_file));
     chat_client->name = (char*)malloc(sizeof(char) * 12);
     strcpy(chat_client->name, "chat_client");
@@ -98,13 +100,22 @@ int myfuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *
     if (file == NULL) {
         return -ENOENT;
     }
-    // if(file==chat_client){
-    //     char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
-    //     server(buffer, 1024, 0);// 0 for read
-    //     memcpy(file->data, buffer, strlen(buffer));
-    //     free(buffer);
-    //     file->size = strlen(file->data);
-    // }
+    if(file==chat_client){
+        char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
+        printf("read from server\n");
+        int r = server_rw(buffer, 1024, 0, serverfd);// 0 for read
+        if(r==-1){}
+        else{
+            if(file->data==NULL){
+                file->data = (char*)malloc(sizeof(char) * r);
+            } else {
+                file->data = (char*)realloc(file->data, sizeof(char) * r);
+            }
+            memcpy(file->data, buffer, r);
+            file->size = r;
+            free(buffer);
+        }
+    }
     memset(stbuf, 0, sizeof(struct stat));
     if (file->is_dir == 1) {
         stbuf->st_mode = S_IFDIR | 0755;
@@ -303,10 +314,19 @@ int myfuse_read(const char *path, char *buf, size_t size, off_t offset, struct f
     }
     if(file==chat_client){
         char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
-        server(buffer, 1024, 0);// 0 for read
-        memcpy(file->data, buffer, strlen(buffer));
-        free(buffer);
-        file->size = strlen(file->data);
+        printf("read from server\n");
+        int r = server_rw(buffer, 1024, 0, serverfd);// 0 for read
+        if(r==-1){}
+        else{
+            if(file->data==NULL){
+                file->data = (char*)malloc(sizeof(char) * r);
+            } else {
+                file->data = (char*)realloc(file->data, sizeof(char) * r);
+            }
+            memcpy(file->data, buffer, r);
+            file->size = r;
+            free(buffer);
+        }
     }
     if (offset >= file->size) {
         return 0;
@@ -329,10 +349,19 @@ int myfuse_write(const char *path, const char *buf, size_t size, off_t offset, s
     }
     if(file==chat_client){
         char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
-        server(buffer, 1024, 0);// 0 for read
-        memcpy(file->data, buffer, strlen(buffer));
-        free(buffer);
-        file->size = strlen(file->data);
+        printf("read from server\n");
+        int r = server_rw(buffer, 1024, 0, serverfd);// 0 for read
+        if(r==-1){}
+        else{
+            if(file->data==NULL){
+                file->data = (char*)malloc(sizeof(char) * r);
+            } else {
+                file->data = (char*)realloc(file->data, sizeof(char) * r);
+            }
+            memcpy(file->data, buffer, r);
+            file->size = r;
+            free(buffer);
+        }
     }
     if (offset + size > MAX_FILE_SIZE) {
         return -EFBIG;
@@ -350,7 +379,10 @@ int myfuse_write(const char *path, const char *buf, size_t size, off_t offset, s
     if(file==chat_client){
         char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
         memcpy(buffer, file->data, file->size);
-        server(buffer, 1024, 1);// 1 for write
+        int w = server_rw(buffer, 1024, 1, serverfd);// 1 for write
+        if(w==-1){
+            printf("write to server error\n");
+        }
         free(buffer);
     }
     return size;
