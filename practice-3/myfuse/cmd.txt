@@ -1,0 +1,3 @@
+./myfuse /tmp/myfuse
+fusermount -u /tmp/myfuse
+ps aux | grep myfuse

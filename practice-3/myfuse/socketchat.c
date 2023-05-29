@@ -5,6 +5,9 @@
 #include <errno.h>
 #include <string.h>
 #include <stdio.h>
+#include <arpa/inet.h>
+#include <sys/time.h>
+
 #include "socketchat.h"
 
 int set_block_flag(int fd, int blocking)
@@ -35,19 +38,56 @@ void server(char *buffer, int size, int rw) {
     // 监听套接字
     listen(sockfd, 5);
 
+    printf("Waiting for client to connect...\n");
     // 接受连接请求，并处理客户端发送的数据
     connfd = accept(sockfd, NULL, NULL);
-    set_block_flag(sockfd, 0);
     if(connfd > 0) printf("New client connected\n");
-    else return;
+    else {
+        printf("accept error\n");
+        close(sockfd);
+        return;
+    }
+    set_block_flag(connfd, 0);
 
     // 处理客户端发送的数据
     if(rw==0){
         memset(buffer, 0, size);
-        read(connfd, buffer, sizeof(buffer));
+        ssize_t nread = 0;
+        int attempts = 0;
+        while (nread <= 0 && attempts < 10) {
+            nread = read(connfd, buffer, size);
+            if (nread == -1) {
+                if (errno == EAGAIN) {
+                    struct timeval tv;
+                    tv.tv_sec = 1;
+                    tv.tv_usec = 0;
+                    select(1, NULL, NULL, NULL, &tv);
+                    attempts++;
+                } else {
+                    perror("read error");
+                    break;
+                }
+            }
+        }
         printf("server received %ld bytes: %s\n", nread, buffer);
     } else {
-        write(connfd, buffer, sizeof(buffer));
+        ssize_t nwrite = 0;
+        int attempts = 0;
+        while (nwrite <= 0 && attempts < 10) {
+            nwrite = write(connfd, buffer, size);
+            if (nwrite == -1) {
+                if (errno == EAGAIN) {
+                    struct timeval tv;
+                    tv.tv_sec = 1;
+                    tv.tv_usec = 0;
+                    select(1, NULL, NULL, NULL, &tv);
+                    attempts++;
+                } else {
+                    perror("write error");
+                    break;
+                }
+            }
+        }
         printf("server sent %ld bytes: %s\n", nwrite, buffer);
     }
 
@@ -58,7 +98,7 @@ void server(char *buffer, int size, int rw) {
     close(sockfd);
 }
 
-void client_read(char *buffer, int size, int rw){
+void client(char *buffer, int size, int rw){
     int sockfd;
     struct sockaddr_in addr;
 
@@ -78,11 +118,43 @@ void client_read(char *buffer, int size, int rw){
     
     // 处理缓冲区中的数据
     if(rw==0){
-        memset(buffer, 0, sizeof(buffer));
-        read(sockfd, buffer, sizeof(buffer));
+        memset(buffer, 0, size);
+        ssize_t nread = 0;
+        int attempts = 0;
+        while (nread <= 0 && attempts < 10) {
+            nread = read(sockfd, buffer, size);
+            if (nread == -1) {
+                if (errno == EAGAIN) {
+                    struct timeval tv;
+                    tv.tv_sec = 1;
+                    tv.tv_usec = 0;
+                    select(1, NULL, NULL, NULL, &tv);
+                    attempts++;
+                } else {
+                    perror("read error");
+                    break;
+                }
+            }
+        }
         printf("client received %ld bytes: %s\n", nread, buffer);
     } else {
-        write(sockfd, buffer, sizeof(buffer));
+        ssize_t nwrite = 0;
+        int attempts = 0;
+        while (nwrite <= 0 && attempts < 10) {
+            nwrite = write(sockfd, buffer, size);
+            if (nwrite == -1) {
+                if (errno == EAGAIN) {
+                    struct timeval tv;
+                    tv.tv_sec = 1;
+                    tv.tv_usec = 0;
+                    select(1, NULL, NULL, NULL, &tv);
+                    attempts++;
+                } else {
+                    perror("write error");
+                    break;
+                }
+            }
+        }
         printf("client sent %ld bytes: %s\n", nwrite, buffer);
     }
 

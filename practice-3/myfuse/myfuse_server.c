@@ -98,13 +98,13 @@ int myfuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *
     if (file == NULL) {
         return -ENOENT;
     }
-    if(file==chat_client){
-        char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
-        server(buffer, 1024, 0);// 0 for read
-        memcpy(file->data, buffer, strlen(buffer));
-        free(buffer);
-        file->size = strlen(file->data);
-    }
+    // if(file==chat_client){
+    //     char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
+    //     server(buffer, 1024, 0);// 0 for read
+    //     memcpy(file->data, buffer, strlen(buffer));
+    //     free(buffer);
+    //     file->size = strlen(file->data);
+    // }
     memset(stbuf, 0, sizeof(struct stat));
     if (file->is_dir == 1) {
         stbuf->st_mode = S_IFDIR | 0755;
@@ -352,7 +352,7 @@ int myfuse_write(const char *path, const char *buf, size_t size, off_t offset, s
         memcpy(buffer, file->data, file->size);
         server(buffer, 1024, 1);// 1 for write
         free(buffer);
-    
+    }
     return size;
 }
 
