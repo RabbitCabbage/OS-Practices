@@ -379,6 +379,7 @@ int myfuse_write(const char *path, const char *buf, size_t size, off_t offset, s
     if(file==chat_client){
         char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
         memcpy(buffer, file->data, file->size);
+        buffer[file->size] = '\0';
         int w = server_rw(buffer, 1024, 1, serverfd);// 1 for write
         if(w==-1){
             printf("write to server error\n");
@@ -462,6 +463,28 @@ int myfuse_unlink(const char *path) {
     return 0;
 }
 
+// change file mode
+int myfuse_chmod(const char *path, mode_t mode, struct fuse_file_info *fi) {
+    struct myfuse_file *file = myfuse_find_file(path);
+    if (file == NULL) {
+        return -ENOENT;
+    } else {
+        // change mode here
+    }
+    return 0;
+}
+
+// change file owner
+int myfuse_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *fi) {
+    struct myfuse_file *file = myfuse_find_file(path);
+    if (file == NULL) {
+        return -ENOENT;
+    } else {
+        // change owner here
+    }
+    return 0;
+}
+
 // file system operations
 static struct fuse_operations myfuse_oper = {
     .init = myfuse_init,
@@ -471,8 +494,8 @@ static struct fuse_operations myfuse_oper = {
     .rmdir = myfuse_rmdir,
     .rename = myfuse_rename,
     .truncate = myfuse_truncate,
-    // .chmod = myfuse_chmod,
-    // .chown = myfuse_chown,
+    .chmod = myfuse_chmod,
+    .chown = myfuse_chown,
     .open = myfuse_open,
     .read = myfuse_read,
     .write = myfuse_write,

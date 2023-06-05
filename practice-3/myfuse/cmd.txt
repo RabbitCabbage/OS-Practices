@@ -6,5 +6,4 @@ lsof -i
 
 gcc -D_FILE_OFFSET_BITS=64 -Wall myfuse_client.c socketchat.c `pkg-config fuse3 --cflags --libs` -o myfuse_client
 
--D_FILE_OFFSET_BITS=64 -Wall myfuse_server.c socketchat.c `pkg-config fuse3 --cflags --libs` -o myfuse_
-server -fsanitize=address -g
+gcc -D_FILE_OFFSET_BITS=64 -Wall myfuse_server.c socketchat.c `pkg-config fuse3 --cflags --libs` -o myfuse_server -fsanitize=address -g
