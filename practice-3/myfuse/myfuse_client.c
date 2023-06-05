@@ -381,7 +381,7 @@ int myfuse_write(const char *path, const char *buf, size_t size, off_t offset, s
         char *buffer = (char*)malloc(sizeof(char) * (1024 + 1));
         memcpy(buffer, file->data, file->size);
         buffer[file->size] = '\0';
-        int w = client_rw(buffer, 1024, 1, clientfd);// 1 for write
+        int w = client_rw(buffer, strlen(buffer), 1, clientfd);// 1 for write
         if(w==-1){
             printf("write to server error\n");
         }
