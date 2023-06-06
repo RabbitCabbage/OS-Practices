@@ -26,7 +26,7 @@ struct myfuse_file {
     struct myfuse_file *parent;
     struct myfuse_file *sibling;
     int is_dir;
-    struct mode_t mode;
+    int mode;
     int uid;
     int gid;
 };
@@ -71,29 +71,11 @@ void* myfuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg) {
     myfuse_file_num = 1;
     // set mod and own
     int uid, gid;
-    struct fuse_context *context = fuse_get_context();
-    if(context){
-        uid = context->uid;
-        gid = context->gid;
-    }
+    uid = getuid();
+    gid = getgid();
     // change own and mode here
     int ret = 0;
-    struct stat stbuf;
-    // 获取文件/目录的元数据信息
-    ret = lstat("/", &stbuf);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to open root path\n");
-        exit(1);
-    }
-    // 更新用户 ID 和组 ID 值
-    stbuf.st_uid = uid;
-    stbuf.st_gid = gid;
-    // 更新权限位部分
-    stbuf.st_mode &= ~0777; // 清除旧权限位
-    stbuf.st_mode |= 0755; // 设置新权限位
-    // 将更新后的用户 ID 和组 ID 值写入文件/目录的元数据信息中
-    ret = change_owner(root, stbuf.st_uid, stbuf.st_gid);
+    ret = change_owner(root, uid, gid);
     if (ret == -1) {
         printf("ret == -1\n");
         printf("fail to chown root path\n");
@@ -101,7 +83,7 @@ void* myfuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg) {
         exit(1);
     }
     // 将修改后的权限位写入文件/目录的元数据信息中
-    ret = change_mode(root, stbuf.st_mode);
+    ret = change_mode(root, 0755);
     if (ret == -1) {
         printf("ret == -1\n");
         printf("fail to chmod root path\n");
@@ -120,34 +102,16 @@ void* myfuse_init(struct fuse_conn_info *conn, struct fuse_config *cfg) {
     chat_server->is_dir = 0;
     root->children = chat_server;
     myfuse_file_num++;
-    // set mod and own
-    if(context){
-        uid = context->uid;
-        gid = context->gid;
-    }
     // change own and mode here
-    // 获取文件/目录的元数据信息
-    ret = lstat("/chat_server", &stbuf);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to open chat_server path\n");
-        exit(1);
-    }
-    // 更新用户 ID 和组 ID 值
-    stbuf.st_uid = uid;
-    stbuf.st_gid = gid;
-    // 更新权限位部分
-    stbuf.st_mode &= ~0777; // 清除旧权限位
-    stbuf.st_mode |= 0644; // 设置新权限位
     // 将更新后的用户 ID 和组 ID 值写入文件/目录的元数据信息中
-    ret = change_owner(chat_server, stbuf.st_uid, stbuf.st_gid);
+    ret = change_owner(chat_server, uid, gid);
     if (ret == -1) {
         printf("ret == -1\n");
         printf("fail to chown chat_server path\n");
         exit(1);
     }
     // 将修改后的权限位写入文件/目录的元数据信息中
-    ret = change_mode(chat_server, stbuf.st_mode);
+    ret = change_mode(chat_server, 0644);
     if (ret == -1) {
         printf("ret == -1\n");
         printf("fail to chmod chat_server path\n");
@@ -211,10 +175,14 @@ int myfuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *
     }
     memset(stbuf, 0, sizeof(struct stat));
     if (file->is_dir == 1) {
-        stbuf->st_mode = S_IFDIR | 0755;
+        stbuf->st_uid = file->uid;
+        stbuf->st_gid = file->gid;
+        stbuf->st_mode = S_IFDIR | file->mode;
         stbuf->st_nlink = 2;
     } else {
-        stbuf->st_mode = S_IFREG | 0644;
+        stbuf->st_uid = file->uid;
+        stbuf->st_gid = file->gid;
+        stbuf->st_mode = S_IFREG | file->mode;
         stbuf->st_nlink = 1;
         stbuf->st_size = file->size;
     }
@@ -253,36 +221,6 @@ int myfuse_mkdir(const char *path, mode_t mode) {
         uid = context->uid;
         gid = context->gid;
     }
-    // change own and mode here
-    int ret = 0;
-    struct stat stbuf;
-    // 获取文件/目录的元数据信息
-    ret = lstat(path, &stbuf);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to open path %s\n", path);
-        exit(1);
-    }
-    // 更新用户 ID 和组 ID 值
-    stbuf.st_uid = uid;
-    stbuf.st_gid = gid;
-    // 更新权限位部分
-    stbuf.st_mode &= ~0777; // 清除旧权限位
-    stbuf.st_mode |= mode; // 设置新权限位
-    // 将更新后的用户 ID 和组 ID 值写入文件/目录的元数据信息中
-    ret = change_owner(file, stbuf.st_uid, stbuf.st_gid);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to chown path %s\n", path);
-        exit(1);
-    }
-    // 将修改后的权限位写入文件/目录的元数据信息中
-    ret = change_mode(file, stbuf.st_mode);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to chmod path %s\n", path);
-        exit(1);
-    }
     char *path_copy = (char*)malloc(sizeof(char) * (strlen(path) + 1));
     strcpy(path_copy, path);
     char *token = strtok(path_copy, "/");
@@ -319,6 +257,22 @@ int myfuse_mkdir(const char *path, mode_t mode) {
         cur->children = new_file;
     }
     myfuse_file_num++;
+    // change own and mode here
+    int ret = 0;
+    // 将更新后的用户 ID 和组 ID 值写入文件/目录的元数据信息中
+    ret = change_owner(new_file, uid, gid);
+    if (ret == -1) {
+        printf("ret == -1\n");
+        printf("fail to chown path %s\n", path);
+        exit(1);
+    }
+    // 将修改后的权限位写入文件/目录的元数据信息中
+    ret = change_mode(new_file, mode);
+    if (ret == -1) {
+        printf("ret == -1\n");
+        printf("fail to chmod path %s\n", path);
+        exit(1);
+    }
     return 0;
 }
 
@@ -532,36 +486,6 @@ int myfuse_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
         uid = context->uid;
         gid = context->gid;
     }
-    // change own and mode here
-    int ret = 0;
-    struct stat stbuf;
-    // 获取文件/目录的元数据信息
-    ret = lstat(path, &stbuf);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to open path %s\n", path);
-        exit(1);
-    }
-    // 更新用户 ID 和组 ID 值
-    stbuf.st_uid = uid;
-    stbuf.st_gid = gid;
-    // 更新权限位部分
-    stbuf.st_mode &= ~0777; // 清除旧权限位
-    stbuf.st_mode |= mode; // 设置新权限位
-    // 将更新后的用户 ID 和组 ID 值写入文件/目录的元数据信息中
-    ret = change_owner(file, stbuf.st_uid, stbuf.st_gid);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to chown path %s\n", path);
-        exit(1);
-    }
-    // 将修改后的权限位写入文件/目录的元数据信息中
-    ret = change_mode(file, stbuf.st_mode);
-    if (ret == -1) {
-        printf("ret == -1\n");
-        printf("fail to chmod path %s\n", path);
-        exit(1);
-    }
     char *path_copy = (char*)malloc(sizeof(char) * (strlen(path) + 1));
     strcpy(path_copy, path);
     char *token = strtok(path_copy, "/");
@@ -598,6 +522,22 @@ int myfuse_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
         cur->children = new_file;
     }
     myfuse_file_num++;
+    // change own and mode here
+    int ret = 0;
+    // 将更新后的用户 ID 和组 ID 值写入文件/目录的元数据信息中
+    ret = change_owner(new_file, uid, gid);
+    if (ret == -1) {
+        printf("ret == -1\n");
+        printf("fail to chown path %s\n", path);
+        exit(1);
+    }
+    // 将修改后的权限位写入文件/目录的元数据信息中
+    ret = change_mode(new_file, mode);
+    if (ret == -1) {
+        printf("ret == -1\n");
+        printf("fail to chmod path %s\n", path);
+        exit(1);
+    }
     return 0;
 }
 
@@ -638,19 +578,7 @@ int myfuse_chmod(const char *path, mode_t mode, struct fuse_file_info *fi) {
     } else {
         // change mode here
         int ret = 0;
-        struct stat stbuf;
-        // 获取文件/目录的元数据信息
-        ret = lstat(path, &stbuf);
-        if (ret == -1) {
-            printf("ret == -1\n");
-            printf("fail to open path %s\n", path);
-            exit(1);
-        }
-        // 更新权限位部分
-        stbuf.st_mode &= ~0777; // 清除旧权限位
-        stbuf.st_mode |= mode; // 设置新权限位
-        // 将修改后的权限位写入文件/目录的元数据信息中
-        ret = change_mode(file, stbuf.st_mode);
+        ret = change_mode(file, mode);
         if (ret == -1) {
             printf("ret == -1\n");
             printf("fail to chmod path %s\n", path);
@@ -668,19 +596,8 @@ int myfuse_chown(const char *path, uid_t uid, gid_t gid, struct fuse_file_info *
     } else {
         // change owner here
         int ret = 0;
-        struct stat stbuf;
-        // 获取文件/目录的元数据信息
-        ret = lstat(path, &stbuf);
-        if (ret == -1) {
-            printf("ret == -1\n");
-            printf("fail to open path %s\n", path);
-            exit(1);
-        }
-        // 更新用户 ID 和组 ID 值
-        stbuf.st_uid = uid;
-        stbuf.st_gid = gid;
         // 将更新后的用户 ID 和组 ID 值写入文件/目录的元数据信息中
-        ret = change_owner(file, stbuf.st_uid, stbuf.st_gid);
+        ret = change_owner(file, uid, gid);
         if (ret == -1) {
             printf("ret == -1\n");
             printf("fail to chown path %s\n", path);
