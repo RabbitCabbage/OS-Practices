@@ -1,0 +1,1 @@
+g++ -o chat_server chat_server.cpp -lboost_system -pthread
