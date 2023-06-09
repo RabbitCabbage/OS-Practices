@@ -1,2 +1,3 @@
 g++ -o chat_server chat_server.cpp -lboost_system -pthread
 g++ -o myserver myserver.cpp -lboost_system -lboost_regex -pthread
+g++ -o myclient myclient.cpp -lboost_system -lboost_regex -pthread
