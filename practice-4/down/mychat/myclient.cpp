@@ -89,6 +89,8 @@ class chat_client
         }
 };
 
+char sender[mymessage::max_name_length + 1] = "client";
+
 int main(int argc, char* argv[])
 {
     try
@@ -105,12 +107,13 @@ int main(int argc, char* argv[])
         std::thread t([&io_context](){ io_context.run(); });
         char line[mymessage::max_body_length + 1];
         while (std::cin.getline(line, mymessage::max_body_length + 1))
-        {
-            mymessage msg;
-            msg.body_length(std::strlen(line));
-            std::memcpy(msg.body(), line, msg.body_length());
-            msg.encode_header();
-            c.write(msg);
+        {   
+            printf("sender is %s\n", sender);
+            sender[strlen(sender)] = '\0'; 
+            mymessage msg(line,sender);
+            bool error = msg.encode();
+            if(error) printf("Invalid command, \'help\' for tips of commands.\n");
+            else c.write(msg);
         }
         c.close();
         t.join();

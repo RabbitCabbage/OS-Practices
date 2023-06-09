@@ -88,8 +88,14 @@ class chat_session
             auto self(shared_from_this());
             boost::asio::async_read(socket_, boost::asio::buffer(read_msg_.data(), mymessage::header_length), 
             [this, self](boost::system::error_code ec, std::size_t /*length*/)
-                {
-                    if (!ec && read_msg_.decode_header()) do_read_body();
+                {   
+                    if (!ec && read_msg_.decode_header()){
+                        // todo different types of messages
+                        printf("debug: read header, the type is %d\n", read_msg_.type());
+                        printf("from %s, to %s\n", read_msg_.sender_name(), read_msg_.object_name());
+                        do_read_body();
+                        printf("the message is %s", read_msg_.body());
+                    }
                     else room_.leave(shared_from_this());
                 });
         }
@@ -100,7 +106,7 @@ class chat_session
             boost::asio::async_read(socket_,
                     boost::asio::buffer(read_msg_.body(), read_msg_.body_length()),
                     [this, self](boost::system::error_code ec, std::size_t /*length*/)
-                    {
+                    {   
                         if (!ec){
                             room_.deliver(read_msg_);
                             do_read_header();
