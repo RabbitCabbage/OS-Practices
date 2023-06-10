@@ -5,6 +5,7 @@
 #include <boost/asio.hpp>
 #include <random>
 #include <ctime>
+#include <boost/date_time/posix_time/posix_time.hpp>
 #include "mymessage.hpp"
 
 using boost::asio::ip::tcp;
@@ -26,6 +27,10 @@ std::string sender = "tourist";
 #define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
 #define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
 #define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
+
+boost::posix_time::ptime last_active_time;
+const int max_idle_time = 3;
+
 class chat_client
 {
     private:
@@ -134,6 +139,7 @@ int main(int argc, char* argv[])
             return 1;
         }
         std::cout<<BOLDYELLOW<<"Welcome to my chatroom! Type \'help\' for tips of commands."<<RESET<<std::endl;
+        last_active_time = boost::posix_time::microsec_clock::local_time();
         boost::asio::io_context io_context;
         tcp::resolver resolver(io_context);
         auto endpoints = resolver.resolve(argv[1], argv[2]);
@@ -143,6 +149,7 @@ int main(int argc, char* argv[])
         while (std::cin.getline(line, mymessage::max_body_length + 1))
         {   
             if(sender == "tourist"){
+                srand(time(NULL));
                 int id = rand()%10000;
                 char tmp[10];
                 sprintf(tmp,"%d",id);
@@ -150,9 +157,19 @@ int main(int argc, char* argv[])
                 // std::cout << "Initial name is " << sender << std::endl;
             }
             mymessage msg(line,sender.c_str());
-            bool error = msg.encode();
-            if(error) std::cout<<BOLDCYAN<<"Invalid command, \'help\' for tips of commands."<<RESET<<std::endl;
-            else c.write(msg);
+            boost::posix_time::time_duration idle_time = boost::posix_time::microsec_clock::local_time() - last_active_time;
+            // printf("idle time: %ld\n",idle_time.total_seconds());
+            // printf("max idle time: %d\n",max_idle_time);
+            if (idle_time.total_seconds() < max_idle_time)  // 如果两次消息之间的时间间隔小于指定的阈值，停止向聊天室server发送消息
+            {
+              std::cout<< BOLDRED << "Message interval too short"<< RESET << std::endl;
+            } else{
+                // last_active_time = now;
+                last_active_time = boost::posix_time::microsec_clock::local_time();
+                bool error = msg.encode();
+                if(error) std::cout<<BOLDCYAN<<"Invalid command, \'help\' for tips of commands."<<RESET<<std::endl;
+                else c.write(msg);
+            }
         }
         c.close();
         t.join();
