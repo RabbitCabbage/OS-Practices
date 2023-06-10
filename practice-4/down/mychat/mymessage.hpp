@@ -21,7 +21,7 @@ boost::regex add_regex("^add\\s+([a-zA-Z0-9_]{1,20})$");
 boost::regex del_regex("^del\\s+([a-zA-Z0-9_]{1,20})$");
 boost::regex send_regex("^send\\s+([a-zA-Z0-9_]{1,20})\\s+(.{1,512})$");
 boost::regex sendall_regex("^send all\\s+(.{1,512})$");
-boost::regex addr_regex("^addr$");
+boost::regex addr_regex("^friends$");
 boost::regex history_regex("^history\\s+([a-zA-Z0-9_]{1,20})$");
 boost::regex clear_regex("^clear\\s+([a-zA-Z0-9_]{1,20})$");
 boost::regex login_regex("^login\\s+([a-zA-Z0-9_]{1,20})\\s+([a-zA-Z0-9_]{1,20})$");
@@ -153,7 +153,7 @@ class mymessage
         bool encode()
         {   
             memset(data_, 0, header_length + max_body_length);
-            printf("sender is %s\n", sender);
+            // printf("sender is %s\n", sender);
             // body_length_, body_message, message_type
             // parse original_data
             boost::smatch what;
@@ -244,8 +244,8 @@ class mymessage
             std::sprintf(get_object_len_ptr(), "%4d", static_cast<int> (strlen(object)));
             memcpy(get_object_ptr(), object, strlen(object));
             std::sprintf(get_length_ptr(), "%4d", static_cast<int> (body_length_));
-            printf("send from %s to %s\n",sender,object);
-            printf("send from %s to %s\n",get_sender_ptr(),get_object_ptr());
+            // printf("send from %s to %s\n",sender,object);
+            // printf("send from %s to %s\n",get_sender_ptr(),get_object_ptr());
             return 0;
         }
 

@@ -1,3 +1,7 @@
 g++ -o chat_server chat_server.cpp -lboost_system -pthread
 g++ -o myserver myserver.cpp -lboost_system -lboost_regex -pthread
 g++ -o myclient myclient.cpp -lboost_system -lboost_regex -pthread
+
+//todo send all
+send 给不存在的人
+login ds again

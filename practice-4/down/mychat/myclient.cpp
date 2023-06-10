@@ -84,7 +84,12 @@ class chat_client
                     [this](boost::system::error_code ec, std::size_t /*length*/)
                     {
                         if (!ec){
-                            std::cout<<BOLDMAGENTA;
+                            if(read_msg_.type()==SEND)std::cout<<BOLDMAGENTA;
+                            else if(read_msg_.type()==LIST||read_msg_.type()==ADDR||read_msg_.type()==HISTORY)
+                                std::cout<<BOLDBLUE;
+                            else if(read_msg_.type()==ADD||read_msg_.type()==DEL||read_msg_.type()==CLEAR||read_msg_.type()==LOGIN)
+                                std::cout<<BOLDCYAN;
+                            else std::cout<<BOLDGREEN;
                             std::cout.write(read_msg_.body(), read_msg_.body_length());
                             std::cout<<RESET;
                             std::cout << "\n";
@@ -94,7 +99,7 @@ class chat_client
                             // printf("the result of strcmp is %d\n",strcmp(read_msg_.body(),"Login successfully"));
                             if(read_msg_.type() == 2 && strcmp(read_msg_.body(),"Login successfully")==0) {
                                 sender = std::string(read_msg_.object_name());
-                                printf("Successfully login as name %s\n",sender.c_str());
+                                // printf("Successfully login as name %s\n",sender.c_str());
                                 // printf("login as name %s\n",sender);
                             }
                             do_read_header();
@@ -128,6 +133,7 @@ int main(int argc, char* argv[])
             std::cerr << "Usage: chat_client <host> <port>\n";
             return 1;
         }
+        std::cout<<BOLDYELLOW<<"Welcome to my chatroom! Type \'help\' for tips of commands."<<RESET<<std::endl;
         boost::asio::io_context io_context;
         tcp::resolver resolver(io_context);
         auto endpoints = resolver.resolve(argv[1], argv[2]);
@@ -141,11 +147,11 @@ int main(int argc, char* argv[])
                 char tmp[10];
                 sprintf(tmp,"%d",id);
                 sender = std::string("tourist") + std::string(tmp);
-                std::cout << "Initial name is " << sender << std::endl;
+                // std::cout << "Initial name is " << sender << std::endl;
             }
             mymessage msg(line,sender.c_str());
             bool error = msg.encode();
-            if(error) printf("Invalid command, \'help\' for tips of commands.\n");
+            if(error) std::cout<<BOLDCYAN<<"Invalid command, \'help\' for tips of commands."<<RESET<<std::endl;
             else c.write(msg);
         }
         c.close();

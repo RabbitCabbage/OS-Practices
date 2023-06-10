@@ -102,7 +102,16 @@ class chat_session
             printf("participant name is %s\n", room_.id_to_name[id].c_str());
             if(msg.type() == ADD || msg.type() == DEL || msg.type() == HISTORY || msg.type() == CLEAR || msg.type() == ADDR){
                  if(room_.id_to_name[id] != msg.sender_name())return;
-            }else if(room_.id_to_name[id] != msg.object_name() && msg.object_name() != "all")return;
+            }else if(msg.type() == SEND)
+            {
+                if(strcmp(msg.object_name(),"all")!=0){
+                    if(strcmp(room_.id_to_name[id].c_str(), msg.object_name())!=0 && strcmp(room_.id_to_name[id].c_str(), msg.sender_name())!=0) return;
+                } else {
+                    // check if the participant is the friend of sender
+                    if(room_.name_to_account[room_.id_to_name[id]].friends_to_history.find(msg.sender_name())==room_.name_to_account[room_.id_to_name[id]].friends_to_history.end() && strcmp(room_.id_to_name[id].c_str(),read_msg_.sender_name())!=0) return;
+                    printf("debug: send to all\n");
+                }
+            } else if(room_.id_to_name[id] != msg.object_name())return;
             bool write_in_progress = !write_msgs_.empty();
             write_msgs_.push_back(msg);
             if (!write_in_progress)
@@ -133,7 +142,16 @@ class chat_session
 
         void operations(){
             printf("the type is %d\n", read_msg_.type());
-            if(read_msg_.type() == LOGIN){
+            if(room_.name_to_account[room_.id_to_name[id]].valid == false)
+                room_.id_to_name[id] = read_msg_.sender_name();
+            if(read_msg_.type() == HELP){
+                    std::string help("=========================================\nThe commands are:\nlogin <name> <password>\n\t--login an account\nhelp\n\t--help for easy-chat\nlist\n\t--list online users\nadd <name>\n\t--add friend\ndel <name>\n\t--delete friend\nsend <name> <message>\n\t--send message to one friend\nsend all <message>\n\t--send to all friends\nfriends\n\t--list your friends\nhistory <name>\n\t--chat history with friend\nclear <name>\n\t--clear chat history with friend\n=========================================");
+                    memcpy(read_msg_.body(), help.c_str(), help.length());
+                    *(read_msg_.body() + help.length()) = '\0';
+                    read_msg_.body_length_ = help.length();
+                    std::sprintf(read_msg_.get_length_ptr(), "%4d",static_cast<int>(read_msg_.body_length_));
+                    room_.deliver(read_msg_);
+            }else if(read_msg_.type() == LOGIN){
                 bool login = false;
                 bool already_online = false;
                 if(room_.name_to_account.find(read_msg_.object_name())!=room_.name_to_account.end()) {
@@ -201,9 +219,11 @@ class chat_session
                     std::sprintf(read_msg_.get_object_len_ptr(), "%4d", static_cast<int>(strlen(read_msg_.sender_name())));
                     memcpy(read_msg_.object, read_msg_.sender_name(), strlen(read_msg_.sender_name()));
                 }
+                    printf("my id is %d, and the name is %s\n", id, room_.id_to_name[id].c_str());
                 room_.deliver(read_msg_);
             } else if(room_.name_to_account[room_.id_to_name[id]].valid == false){
-                std::string msg = "You are a tourist, please login first\0";
+                printf("This is a tourist\n");
+                std::string msg = "You are a tourist, please login first, \'help\' for help\0";
                 memcpy(read_msg_.body(), msg.c_str(), msg.length());    
                 *(read_msg_.body() + msg.length()) = '\0';
                 read_msg_.body_length_ = msg.length();
@@ -216,7 +236,7 @@ class chat_session
                     for(auto it = room_.name_to_account.begin(); it!=room_.name_to_account.end(); it++){
                         if(it->second.online) list += it->first + "\n";
                     }
-                    list += "=========================\n";
+                    list += "=========================";
                     // printf("the sender is %s\n", read_msg_.sender_name());
                     // printf("the object is %s\n", read_msg_.object_name());
                     // printf("the body is %s\n", read_msg_.body());
@@ -229,7 +249,7 @@ class chat_session
                     room_.deliver(read_msg_);
                 } else if(read_msg_.type() == ADD){
                     std::string add_name = read_msg_.object_name();
-                    if(room_.name_to_account.find(add_name)==room_.name_to_account.end()){
+                    if(room_.name_to_account.find(add_name)==room_.name_to_account.end()||add_name=="all"){
                         const char *msg = "The user does not exist\0";
                         memcpy(read_msg_.body(), msg, strlen(msg));
                         *(read_msg_.body() + strlen(msg)) = '\0';
@@ -253,7 +273,7 @@ class chat_session
                     room_.deliver(read_msg_);
                 } else if(read_msg_.type() == DEL){
                     std::string del_name = read_msg_.object_name();
-                    if(room_.name_to_account.find(del_name)==room_.name_to_account.end()||room_.name_to_account[room_.id_to_name[id]].friends_to_history.find(del_name)==room_.name_to_account[room_.id_to_name[id]].friends_to_history.end()){
+                    if(room_.name_to_account.find(del_name)==room_.name_to_account.end()||room_.name_to_account[room_.id_to_name[id]].friends_to_history.find(del_name)==room_.name_to_account[room_.id_to_name[id]].friends_to_history.end()|| del_name=="all"){
                         const char *msg = "The friend does not exist\0";
                         memcpy(read_msg_.body(), msg, strlen(msg));
                         *(read_msg_.body() + strlen(msg)) = '\0';
@@ -271,6 +291,8 @@ class chat_session
                     room_.deliver(read_msg_);                        
                 } else if(read_msg_.type() == SEND){
                     std::string to_name = read_msg_.object_name();
+                    printf("debug: the sender is %s\n", read_msg_.sender_name());
+                    printf("debug: the object is %s\n", read_msg_.object_name());
                     if(to_name!="all" && (room_.name_to_account.find(to_name)==room_.name_to_account.end()||room_.name_to_account[room_.id_to_name[id]].friends_to_history.find(to_name)==room_.name_to_account[room_.id_to_name[id]].friends_to_history.end())){
                         std::string msg = "Failed to send message, ";
                         if(room_.name_to_account.find(to_name)==room_.name_to_account.end()) msg += "the friend does not exist\0";
@@ -279,6 +301,10 @@ class chat_session
                         *(read_msg_.body() + msg.length()) = '\0';
                         read_msg_.body_length_ = msg.length();
                         std::sprintf(read_msg_.get_length_ptr(), "%4d",static_cast<int>(read_msg_.body_length_));
+                        memcpy(read_msg_.get_object_ptr(), read_msg_.sender_name(), strlen(read_msg_.sender_name()));
+                        *(read_msg_.get_object_ptr() + strlen(read_msg_.sender_name())) = '\0';
+                        std::sprintf(read_msg_.get_object_len_ptr(), "%4d", static_cast<int>(strlen(read_msg_.sender_name())));
+                        memcpy(read_msg_.object, read_msg_.sender_name(), strlen(read_msg_.sender_name()));
                     } else {
                         std::string msg = read_msg_.sender_name() + std::string(": ") + read_msg_.body();
                         memcpy(read_msg_.body(), msg.c_str(), msg.length());
@@ -287,6 +313,14 @@ class chat_session
                         std::sprintf(read_msg_.get_length_ptr(), "%4d",static_cast<int>(read_msg_.body_length_));
                         room_.name_to_account[read_msg_.sender_name()].friends_to_history[read_msg_.object_name()].push_back(std::string(read_msg_.body()));
                         room_.name_to_account[read_msg_.object_name()].friends_to_history[read_msg_.sender_name()].push_back(std::string(read_msg_.body()));
+                        if(to_name=="all"){
+                            // to all the friends of the sender
+                            for(auto it = room_.name_to_account[read_msg_.sender_name()].friends_to_history.begin(); it!=room_.name_to_account[read_msg_.sender_name()].friends_to_history.end(); it++){
+                                if(it->first=="all")continue;
+                                it->second.push_back(std::string(read_msg_.body()));
+                                room_.name_to_account[it->first].friends_to_history[read_msg_.sender_name()].push_back(std::string(read_msg_.body()));     
+                            }                         
+                        }
                     }
                     room_.deliver(read_msg_);
                 }else if(read_msg_.type() == HISTORY){
@@ -302,20 +336,13 @@ class chat_session
                             for(auto it = room_.name_to_account[room_.id_to_name[id]].friends_to_history[history_name].begin(); it!=room_.name_to_account[room_.id_to_name[id]].friends_to_history[history_name].end(); it++){
                                 history += *it + std::string("\n");
                             }
-                            history += "=========================\n";
+                            history += "=========================";
                             memcpy(read_msg_.body(), history.c_str(), history.length());
                             *(read_msg_.body() + history.length()) = '\0';
                             read_msg_.body_length_ = history.length();
                             std::sprintf(read_msg_.get_length_ptr(), "%4d",static_cast<int>(read_msg_.body_length_));
                         }
                         room_.deliver(read_msg_);
-                }else if(read_msg_.type() == HELP){
-                    std::string help("The commands are:\nlist\nadd <name>\ndel <name>\nsend <name> <message>\naddr\nhistory <name>\nclear <name>\nlogin <name> <password>\nhelp");
-                    memcpy(read_msg_.body(), help.c_str(), help.length());
-                    *(read_msg_.body() + help.length()) = '\0';
-                    read_msg_.body_length_ = help.length();
-                    std::sprintf(read_msg_.get_length_ptr(), "%4d",static_cast<int>(read_msg_.body_length_));
-                    room_.deliver(read_msg_);
                 }else if(read_msg_.type() == CLEAR){
                     std::string clear_name = read_msg_.object_name();
                     if(room_.name_to_account[room_.id_to_name[id]].friends_to_history.find(clear_name)==room_.name_to_account[room_.id_to_name[id]].friends_to_history.end()){
@@ -336,9 +363,10 @@ class chat_session
                 }else if(read_msg_.type() == ADDR){
                     std::string addr = "=========================\nThe contacts of " + std::string(read_msg_.sender_name()) + ":\n";
                     for(auto it = room_.name_to_account[read_msg_.sender_name()].friends_to_history.begin(); it!=room_.name_to_account[read_msg_.sender_name()].friends_to_history.end(); it++){
+                        if(it->first=="all")continue;
                         addr += it->first + std::string("\n");
                     }
-                    addr += "=========================\n";
+                    addr += "=========================";
                     memcpy(read_msg_.body(), addr.c_str(), addr.length());
                     *(read_msg_.body() + addr.length()) = '\0';
                     // printf("debug: the body is %s\n", read_msg_.body());
