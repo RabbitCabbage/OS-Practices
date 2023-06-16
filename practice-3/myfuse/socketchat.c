@@ -10,7 +10,7 @@
 
 #include "socketchat.h"
 
-int port = 4453;
+int port = 4488;
 
 int set_block_flag(int fd, int blocking)
 {
