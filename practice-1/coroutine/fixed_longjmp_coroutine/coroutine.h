@@ -3,24 +3,14 @@
 #define COROUTINE_H
 
 typedef long long cid_t;
-#define MAXN 10
+#define MAXN 1000
 #define UNAUTHORIZED -1
+#define WAITING 3
 #define FINISHED 2
 #define RUNNING 1
 #define NULL 0
 #include <setjmp.h>
 
-struct task_struct{
-    cid_t coroutine_id;
-    struct task_struct *parent_coroutine;
-    int (*routine)(void);
-    int status;
-    int return_value;
-    jmp_buf env;
-    struct task_struct* wait_for;
-    int *stack_pointer;
-    struct list_node* node_ptr;
-};
 int co_start(int (*routine)(void));
 int co_getid();
 int co_getret(int cid);

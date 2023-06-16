@@ -1,59 +1,60 @@
-/* YOUR CODE HERE */
-#include <setjmp.h>
 #include "coroutine.h"
-#include "coroutine_vector.h"
-#include "yielded_list.h"
+#include "task_list.h"
+#include "task_array.h"
+
 #include <stdio.h>
+#include <stdlib.h>
+#include <setjmp.h>
+#include "pthread.h"
 
-struct task_struct* current_coroutine = NULL;
-cid_t coroutine_count = 0;
-struct coroutine_vector* coroutines = NULL;
-struct list* yield_list = NULL;
+struct task_struct{
+    cid_t coroutine_id;
+    struct task_struct *parent_coroutine;
+    int (*routine)(void);
+    int status;
+    int return_value;
+    jmp_buf env;
+    struct task_list waiting_list;
+    char *stack_pointer;
+    struct list_node* node_ptr;
+};
 
-void __attribute__((constructor)) init_containers(){
-        coroutines = (struct coroutine_vector*)malloc(sizeof(struct coroutine_vector));
-        coroutines->array_pointer = (struct task_struct *)malloc(100*sizeof(struct task_struct));
-        coroutines->size = 0;
-        coroutines->capacity = 100;
-        yield_list = (struct list*)malloc(sizeof(struct list));
-        yield_list->head_node = (struct list_node *)malloc(sizeof(struct list_node));//create head
-        yield_list->head_node->prev = NULL;
-        yield_list->head_node->next = NULL;//init head
-        current_coroutine = add_coroutine(coroutines,-1,current_coroutine,NULL);
-        yield_list->head_node->coroutine_task = current_coroutine;
-        yield_list->head_node->coroutine_id = -1;
-        yield_list->tail_node = yield_list->head_node;
+__thread struct co_manager{
+    int inited;
+    struct task_struct *current_task;
+    struct task_struct *main_task;
+    struct task_struct *coroutines;// begin from the first coroutine
+    struct task_struct coroutine_array[MAXN+1];// begin from main coroutine
+    struct node nodes[MAXN+1];
+    struct task_struct* available_array[MAXN+1];
+    int total;
+    int available;
+    int unfinished;
+} manager;
+
+void init_manager(){
+    manager.coroutine_array[0]=(struct task_struct){.coroutine_id = -1,.routine = NULL,.status = RUNNING};
+    manager.main_task = manager.current_task = manager.coroutine_array;
+    manager.coroutines = manager.coroutine_array+1;
+    manager.available_array[0]=manager.main_task;
+    manager.total = 0;
+    manager.available = 1;
+    manager.unfinished = 0;
+    manager.inited = 1;
 }
 
-void __attribute__((destructor)) destroy_containers(){
-        free((void *)coroutines->array_pointer);
-        free((void *)coroutines);
-        free((void *)yield_list->head_node);
-        free((void *)yield_list);
-}
-
-void afterrun(int ret_val){
-    current_coroutine->status = FINISHED;
-    current_coroutine->return_value = ret_val;
-    delete_coroutine_yieldlist(yield_list,current_coroutine);
-    // wait relationship will be checked if the coroutine is finished
-    // because we cannot record all the coroutines which wait for the current coroutine
-    // we can easily check whether one coroutine is waiting for other coroutines
-    // free((void *)current_coroutine->stack_pointer);// cannot free because we are still using this stack
-    current_coroutine = find_first_coroutine(yield_list);
-    longjmp(current_coroutine->env,1);
-}
-
-int co_start(int (*routine)(void)){ 
-        // not from the coroutine, conduct the starting of the coroutine
-        struct task_struct *new_coroutine = add_coroutine(coroutines,coroutine_count++,current_coroutine,routine);
-        if(current_coroutine->coroutine_id!=-1 && current_coroutine->status!=FINISHED)
-            add_yielded_coroutine(yield_list,current_coroutine->coroutine_id,current_coroutine);
-        current_coroutine = new_coroutine;
-    if(setjmp(current_coroutine->env)==0){
-        // malloc the stack
-        int *new_sp = (int *)malloc(1024*sizeof(int));
-        current_coroutine->stack_pointer = new_sp;
+void run_coroutine(struct task_struct *task){
+    printf("funcrtion: run_coroutine\n");
+    printf("current coroutine: %lld, ", manager.current_task->coroutine_id);
+    printf("run_coroutine: %lld\n", task->coroutine_id);
+    struct task_struct * last_task = manager.current_task;
+    task->status = RUNNING;
+    manager.current_task = task;
+    if(setjmp(last_task->env) == 0){
+        printf("setjump in run_coroutine\n");
+        char *new_sp = task->stack_pointer+65536;
+        int (*routine)(void) = task->routine;
+        printf("run_coroutine: %lld\n", task->coroutine_id);
         asm __volatile__(
             "movq %0, %%rsp\n\t"
             "call *%1   \n\t"
@@ -61,50 +62,114 @@ int co_start(int (*routine)(void)){
             "call afterrun    \n\t"
             ::"r"(new_sp), "r"(routine)
         );
-    } else {
-        // from some coroutine
-        return new_coroutine->coroutine_id;
     }
+}
+
+void switch_to_another(){
+    printf("funcrtion: switch_to_another\n");
+    struct task_struct* next_task = manager.available_array[0];
+    if(next_task->coroutine_id == manager.current_task->coroutine_id){
+        if(manager.available>1){
+            next_task = manager.available_array[1];
+        }
+        else {
+            printf("have nothing to switch to\n");
+            exit(1);
+        }
+    }
+    printf("switch_to_another: %lld\n", next_task->coroutine_id);
+    if(next_task->status == WAITING)run_coroutine(next_task);
+    else {
+        manager.current_task = next_task;
+        printf("longjump_to: %lld\n", next_task->coroutine_id);
+        longjmp(next_task->env, 1);
+    }
+}
+
+void afterrun(int retval){
+    printf("funcrtion: afterrun\n");
+    manager.current_task->return_value = retval;
+    manager.current_task->status = FINISHED;
+    manager.unfinished--;
+    // those waiting for current task will be available, add to the available array of the manager
+    add_all_to_array(manager.available_array, &manager.available, &manager.current_task->waiting_list);
+    // todo 要把main加回去，导致main的available_array[0]不是main了！！！！！
+    // and this task will be removed from the available list of managernnn
+    remove_from_array(manager.available_array, &manager.available, manager.current_task);
+    switch_to_another();
+}
+
+int co_start(int (*routine)(void)){
+    if(!manager.inited){
+        init_manager();
+    }
+    struct task_struct *new_task = &manager.coroutines[manager.total];
+    new_task->coroutine_id = manager.total;
+    new_task->routine = routine;
+    new_task->stack_pointer = (char*)malloc(65536);
+    new_task->waiting_list.head = NULL;
+    new_task->parent_coroutine = manager.current_task;
+    new_task->status = WAITING;
+    add_to_array(manager.available_array, &manager.available, new_task);
+    manager.total++;
+    manager.unfinished++;
+    cid_t cid = new_task->coroutine_id;
+    run_coroutine(new_task);
+    return cid;
 }
 
 int co_getid(){
-    return current_coroutine->coroutine_id;
+    return (int)manager.current_task->coroutine_id;
 }
 
 int co_getret(int cid){
-    return get_coroutine(coroutines,cid)->return_value;
+    return manager.coroutines[cid].return_value;
+}
+
+int is_parent_of(struct task_struct *task){
+    if(manager.current_task==task||manager.current_task==task->parent_coroutine)return 1;
+    if(task->parent_coroutine!=NULL)return is_parent_of(task->parent_coroutine);
+    return 0;
+}
+int co_status(int cid){
+    if(is_parent_of(&manager.coroutines[cid]))  return manager.coroutines[cid].status;
+    else return UNAUTHORIZED;
 }
 
 int co_yield(){
-    // print out the info for the current coroutine env
-    if(setjmp(current_coroutine->env)==0){
-        struct task_struct *yield_to = find_first_coroutine(yield_list);
-        add_yielded_coroutine(yield_list,current_coroutine->coroutine_id,current_coroutine);
-        if(yield_to->coroutine_id==current_coroutine->coroutine_id){
-            yield_to = yield_list->head_node->coroutine_task;
-        }
-        current_coroutine = yield_to;
-        longjmp(current_coroutine->env,1);
-    } else {   
-        return current_coroutine->coroutine_id;
+    struct task_struct *task = manager.current_task;
+    int x = setjmp(task->env);
+    printf("setjump in co_yield\n");
+    if(x==0){
+        switch_to_another();
     }
+    return 0;
 }
 
 int co_waitall(){
-    while(yield_list->head_node->next!=NULL){
+    while(manager.unfinished>0){
         co_yield();
     }
     return 0;
 }
 
 int co_wait(int cid){
-    //current coroutine should wait for cid
-    current_coroutine->wait_for = get_coroutine(coroutines,cid);
-    if(current_coroutine->wait_for->status == RUNNING)
-         co_yield();
-    return current_coroutine->coroutine_id;
-}
-
-int co_status(int cid){
-    return get_coroutine(coroutines,cid)->status;
+    struct task_struct *cur, *task;
+    int flag=0;
+    cur = manager.current_task;
+    task = &manager.coroutines[cid];
+    if(task->status!=FINISHED){
+        add_to_list(&task->waiting_list, cur);
+        remove_from_array(manager.available_array, &manager.available, cur);
+        flag = 1;
+    }
+    if(flag==0)return 0;
+    else{
+        int x = setjmp(cur->env);
+        printf("setjump in co_wait\n");
+        if(x==0){
+            switch_to_another();
+        }
+    }
+    return 0;
 }
