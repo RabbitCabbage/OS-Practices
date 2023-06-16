@@ -48,6 +48,7 @@ int test_getid(void){
 _Atomic int total_coroutine_count = 0;
 
 int test_multithread_coroutine_inner() {
+    // printf("test multithread coroutine inner\n");
     total_coroutine_count++;
     return 1;
 }
@@ -57,7 +58,12 @@ int test_multithread_coroutine() {
     const int CNT = 10;
     cid_t coroutine[CNT];
     for (int i = 0; i < CNT; ++i) {
+        // printf("start inner coroutine %d\n", i);
         coroutine[i] = co_start(test_multithread_coroutine_inner);
+        // printf("the return value of coroutine %d is %d\n", i, co_getret(coroutine[i]));
+        fflush(stdout);
+        // printf("the status of the coroutine %d is %d\n", i, co_status(coroutine[i]));\
+        fflush(stdout);
         co_yield();
         if (i > 1) {
             co_wait(coroutine[i - 1]);
@@ -80,8 +86,12 @@ void* test_multithread_thread(void *ptr) {
     for (int i = 0; i < CNT; ++i) {
         coroutine[i] = co_start(test_multithread_coroutine);
     }
+    for(int i = 0; i < CNT; ++i) {
+        co_wait(coroutine[i]);
+    }
     for (int i = 0; i < CNT; ++i) {
-        printf("return value: %d\n", co_getret(coroutine[i]));
+        // printf("the cid of the coroutine %d is %d\n", i, coroutine[i]);
+        // printf("return value: %d\n", co_getret(coroutine[i]));
         assert(co_status(coroutine[i]) == FINISHED);
         assert(co_getret(coroutine[i]) == 1);
         assert(co_status(coroutine[i]) == FINISHED);
